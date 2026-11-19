@@ -56,8 +56,8 @@ OPENING_CHARS = 600             # how far into a message its opening is looked f
 
 def get_groups_read(payload: dict) -> frozenset:
     """The groups a `role` record says its channel reads (`reads`: a coordinator agent's over several groups)."""
-    got = payload.get("reads") if isinstance(payload, dict) else None
-    return frozenset(str(g) for g in got if g) if isinstance(got, list) else frozenset()
+    listed = payload.get("reads") if isinstance(payload, dict) else None
+    return frozenset(str(group) for group in listed if group) if isinstance(listed, list) else frozenset()
 
 
 class HiddenSessions:
@@ -89,16 +89,16 @@ class ParallelSessions:
         reads: Dict[str, frozenset] = {}
         group: Dict[str, str] = {}
         role_ids = types.of(ROLE)
-        for r in conn.rows(0, types.of(ROLE, GROUP)):
-            ch = channel_of(r)
-            if ch is None or not isinstance(r.payload, dict):
+        for row in conn.rows(0, types.of(ROLE, GROUP)):
+            row_channel = channel_of(row)
+            if row_channel is None or not isinstance(row.payload, dict):
                 continue
-            if r.type.id in role_ids:
-                private[ch] = bool(r.payload.get("private"))
-                reads[ch] = get_groups_read(r.payload)
+            if row.type.id in role_ids:
+                private[row_channel] = bool(row.payload.get("private"))
+                reads[row_channel] = get_groups_read(row.payload)
             else:
-                group[ch] = str(r.payload.get("group") or "")
-        return HiddenSessions({ch for ch, hidden in private.items() if hidden}, group, group.get(channel_id, ""),
+                group[row_channel] = str(row.payload.get("group") or "")
+        return HiddenSessions({session for session, is_private in private.items() if is_private}, group, group.get(channel_id, ""),
                       reads.get(channel_id, frozenset()))
 
     def has_group_changed(self, conn, types: TypeIds, channel_id, since_row: int) -> bool:
@@ -106,104 +106,104 @@ class ParallelSessions:
         channel from one group to another (its `was` given, and not its `group`) -- this one, or another into or out
         of this one's group. A first record (no `was`: an actor starting) changes nothing of the others': its
         requests come to them as any new session's do."""
-        moves, role_ids = [], types.of(ROLE)
-        for r in conn.rows(since_row, types.of(GROUP, ROLE)):
-            p = r.payload if isinstance(r.payload, dict) else {}
-            if r.type.id in role_ids:
-                if channel_of(r) == channel_id and "reads" in p:
+        group_moves, role_ids = [], types.of(ROLE)
+        for row in conn.rows(since_row, types.of(GROUP, ROLE)):
+            payload = row.payload if isinstance(row.payload, dict) else {}
+            if row.type.id in role_ids:
+                if channel_of(row) == channel_id and "reads" in payload:
                     return True                       # the groups it reads changed (the dashboard writes them so)
-            elif "was" in p and str(p.get("group") or "") != str(p.get("was") or ""):
-                moves.append((channel_of(r), str(p.get("group") or ""), str(p.get("was") or "")))
-        if not moves:
+            elif "was" in payload and str(payload.get("group") or "") != str(payload.get("was") or ""):
+                group_moves.append((channel_of(row), str(payload.get("group") or ""), str(payload.get("was") or "")))
+        if not group_moves:
             return False
-        seen = self.get_hidden_sessions(conn, types, channel_id)
-        return any(moved == channel_id or seen.is_shown_group(group) or seen.is_shown_group(was) for moved, group, was in moves)
+        hidden = self.get_hidden_sessions(conn, types, channel_id)
+        return any(moved == channel_id or hidden.is_shown_group(group) or hidden.is_shown_group(was) for moved, group, was in group_moves)
 
     def get_groups_read_before(self, conn, types: TypeIds, channel_id, row_id: int) -> frozenset:
         """The groups the channel read before the row `row_id`: its latest `role` record before it's."""
-        got = frozenset()
-        for r in conn.rows(0, types.of(ROLE)):
-            if r.row_id >= row_id:
+        groups_read = frozenset()
+        for row in conn.rows(0, types.of(ROLE)):
+            if row.row_id >= row_id:
                 break
-            if channel_of(r) == channel_id and isinstance(r.payload, dict):
-                got = get_groups_read(r.payload)
-        return got
+            if channel_of(row) == channel_id and isinstance(row.payload, dict):
+                groups_read = get_groups_read(row.payload)
+        return groups_read
 
-    def is_user_request(self, r: Row) -> bool:
+    def is_user_request(self, row: Row) -> bool:
         """Whether another channel's user message is shown to this one as its user's request: not a message the actors
         sent each other, which opens a line with one of `unshared_openings` -- at its start, or past the wrapper its
         harness put round it (a mid-turn note, a paste's tags)."""
         openings = self.config.unshared_openings
         if not openings:
             return True
-        head = (event_text(r) or "")[:OPENING_CHARS]
+        head = (event_text(row) or "")[:OPENING_CHARS]
         return not any(line.lstrip().startswith(openings) for line in head.split("\n"))
 
-    def get_visible_events(self, conn, types: TypeIds, channel_id, cut: int, name: str) -> list:
-        """The events of type `name` the channel can see from `cut` on -- the
+    def get_visible_events(self, conn, types: TypeIds, channel_id, verbatim_start: int, name: str) -> list:
+        """The events of type `name` the channel can see from `verbatim_start` on -- the
         verbatim part of the context; those a build has condensed past are
         not looked at -- in row order."""
-        rows = conn.rows(after_row=max(cut - 1, 0), match=channel.of(channel_id), type_ids=types.of(name))
-        if not any(channel_of(r) is None and isinstance(r.payload, dict) and "group" in r.payload for r in rows):
+        rows = conn.rows(after_row=max(verbatim_start - 1, 0), match=channel.of(channel_id), type_ids=types.of(name))
+        if not any(channel_of(row) is None and isinstance(row.payload, dict) and "group" in row.payload for row in rows):
             return rows
-        seen = self.get_hidden_sessions(conn, types, channel_id)        # a record with no channel, for one group: its channels'
-        return [r for r in rows if channel_of(r) is not None or not isinstance(r.payload, dict)
-                or seen.is_shown_group(str(r.payload.get("group", seen.own) or ""))]
+        hidden = self.get_hidden_sessions(conn, types, channel_id)        # a record with no channel, for one group: its channels'
+        return [row for row in rows if channel_of(row) is not None or not isinstance(row.payload, dict)
+                or hidden.is_shown_group(str(row.payload.get("group", hidden.own) or ""))]
 
-    def make_group_change_notes(self, conn, types: TypeIds, channel_id, cut: int) -> List[tuple]:
+    def make_group_change_notes(self, conn, types: TypeIds, channel_id, verbatim_start: int) -> List[tuple]:
         """("made", row_id, item, (made_id, tokens)) for each change of groups in the verbatim part that changed what
         the channel is shown (`has_group_changed`): its own move (`group_moved`), or a run of other channels' moves into or out
         of its group -- records stored one after another, as a folder's move writes them -- as one message
         (`group_joined`, `group_left`), at its first record's place."""
-        ids, role_ids = types.of(GROUP), types.of(ROLE)
-        rows = conn.rows(after_row=max(cut - 1, 0), type_ids=ids | role_ids) if ids else []
-        moves = [(r, r.payload) for r in rows if isinstance(r.payload, dict) and (
-            (r.type.id in role_ids and channel_of(r) == channel_id and "reads" in r.payload)
-            or (r.type.id not in role_ids and "was" in r.payload
-                and str(r.payload.get("group") or "") != str(r.payload.get("was") or "")))]
-        if not moves:
+        group_type_ids, role_ids = types.of(GROUP), types.of(ROLE)
+        rows = conn.rows(after_row=max(verbatim_start - 1, 0), type_ids=group_type_ids | role_ids) if group_type_ids else []
+        group_moves = [(row, row.payload) for row in rows if isinstance(row.payload, dict) and (
+            (row.type.id in role_ids and channel_of(row) == channel_id and "reads" in row.payload)
+            or (row.type.id not in role_ids and "was" in row.payload
+                and str(row.payload.get("group") or "") != str(row.payload.get("was") or "")))]
+        if not group_moves:
             return []
-        cfg = self.config
-        seen = self.get_hidden_sessions(conn, types, channel_id)
+        config = self.config
+        hidden = self.get_hidden_sessions(conn, types, channel_id)
         reads_before: Optional[frozenset] = None             # what it read before each role record: the note says the change
 
         def named(name, group_id: str) -> str:
-            return str(name) if name else (f"group {group_id}" if group_id else cfg.group_own)
+            return str(name) if name else (f"group {group_id}" if group_id else config.group_own)
 
-        said, run, last_row = [], None, None                 # said: [row_id, kind, text or [channels]]
-        for r, p in moves:
-            if r.type.id in role_ids:                        # the groups it reads, changed
-                now = get_groups_read(p)
+        notes, current_run, last_row = [], None, None                 # notes: [row_id, kind, text or [channels]]
+        for row, payload in group_moves:
+            if row.type.id in role_ids:                        # the groups it reads, changed
+                groups_now = get_groups_read(payload)
                 if reads_before is None:
-                    reads_before = self.get_groups_read_before(conn, types, channel_id, r.row_id)
-                came, left = sorted(now - reads_before), sorted(reads_before - now)
-                reads_before = now
-                names = p.get("names") if isinstance(p.get("names"), dict) else {}
-                said += [[r.row_id, "moved", text.format(groups=", ".join(str(names.get(g) or g) for g in which))]
-                         for text, which in ((cfg.reads_added, came), (cfg.reads_removed, left)) if which]
-                run = None
-                last_row = r.row_id
+                    reads_before = self.get_groups_read_before(conn, types, channel_id, row.row_id)
+                added, removed = sorted(groups_now - reads_before), sorted(reads_before - groups_now)
+                reads_before = groups_now
+                names = payload.get("names") if isinstance(payload.get("names"), dict) else {}
+                notes += [[row.row_id, "moved", text.format(groups=", ".join(str(names.get(group) or group) for group in which))]
+                         for text, which in ((config.reads_added, added), (config.reads_removed, removed)) if which]
+                current_run = None
+                last_row = row.row_id
                 continue
-            group, was, moved = str(p.get("group") or ""), str(p.get("was") or ""), channel_of(r)
+            group, was, moved = str(payload.get("group") or ""), str(payload.get("was") or ""), channel_of(row)
             if moved == channel_id:
-                to, fro = named(p.get("name"), group), named(p.get("was_name"), was)
-                said.append([r.row_id, "moved", cfg.group_alone.format(was=fro) if group.startswith(ALONE)
-                             else cfg.group_back.format(group=to) if was.startswith(ALONE)
-                             else cfg.group_moved.format(group=to, was=fro)])
-                run = None
-            elif seen.is_shown_group(group) != seen.is_shown_group(was):
-                kind = "joined" if seen.is_shown_group(group) else "left"
-                if run is not None and run[1] == kind and r.row_id == last_row + 1:
-                    run[2].append(moved)
+                new_name, old_name = named(payload.get("name"), group), named(payload.get("was_name"), was)
+                notes.append([row.row_id, "moved", config.group_alone.format(was=old_name) if group.startswith(ALONE)
+                             else config.group_back.format(group=new_name) if was.startswith(ALONE)
+                             else config.group_moved.format(group=new_name, was=old_name)])
+                current_run = None
+            elif hidden.is_shown_group(group) != hidden.is_shown_group(was):
+                kind = "joined" if hidden.is_shown_group(group) else "left"
+                if current_run is not None and current_run[1] == kind and row.row_id == last_row + 1:
+                    current_run[2].append(moved)
                 else:
-                    run = [r.row_id, kind, [moved]]
-                    said.append(run)
+                    current_run = [row.row_id, kind, [moved]]
+                    notes.append(current_run)
             else:
-                run = None
-            last_row = r.row_id
+                current_run = None
+            last_row = row.row_id
         out = []
-        for row_id, kind, what in said:
-            text = what if kind == "moved" else (cfg.group_joined if kind == "joined" else cfg.group_left).format(
+        for row_id, kind, what in notes:
+            text = what if kind == "moved" else (config.group_joined if kind == "joined" else config.group_left).format(
                 channels=", ".join(what))
             made_id, item, tokens = tables.make_message(conn, self.format, self.tokenizer, channel_id, text, GROUP_CHANGE, f"group {row_id}")
             out.append(("made", row_id, item, (made_id, tokens)))
@@ -214,17 +214,17 @@ class ParallelSessions:
         """(the other channels' tasks, located in their turns; those turns, by channel): each channel's whole history
         read, so seconds in a big gatherer -- cut short, with what was found so far, once `stopped` (the harness hung
         up on the call: `Read.stopped`)."""
-        found, turns_by_channel, unseen = [], {}, self.get_hidden_sessions(conn, types, channel_id)
+        tasks_found, turns_by_channel, hidden = [], {}, self.get_hidden_sessions(conn, types, channel_id)
         for other in tables.get_channels_with_tasks(conn):
             if stopped():
                 break
-            if other == channel_id or other is None or other in unseen:
+            if other == channel_id or other is None or other in hidden:
                 continue
             _, turns = history.split(history.rows(conn, types, self.groups, other), types, self.groups, self.tokenizer)
-            tables.apply_cleaned_texts(conn, [t.entries[0] for t in turns])
+            tables.apply_cleaned_texts(conn, [turn.entries[0] for turn in turns])
             turns_by_channel[other] = turns
-            found += tasks_tool.locate(tables.get_own_tasks(conn, other), turns)
-        return found, turns_by_channel
+            tasks_found += tasks_tool.locate(tables.get_own_tasks(conn, other), turns)
+        return tasks_found, turns_by_channel
 
     # ---- the user's requests to the other sessions
 
@@ -236,43 +236,43 @@ class ParallelSessions:
     def make_parallel_requests(self, conn, types: TypeIds, channel_id, after_row: int) -> List[tuple]:
         """(made_id, item, tokens, its row id) for each user message stored in
         another channel after `after_row`, oldest first."""
-        out, unseen = [], self.get_hidden_sessions(conn, types, channel_id)
-        for r in conn.rows(after_row, types.of(*self.groups.user), differ=channel.of(channel_id)):
-            other = channel_of(r)
-            if other is None or other == channel_id or other in unseen or not self.is_user_request(r):
+        out, hidden = [], self.get_hidden_sessions(conn, types, channel_id)
+        for row in conn.rows(after_row, types.of(*self.groups.user), differ=channel.of(channel_id)):
+            other = channel_of(row)
+            if other is None or other == channel_id or other in hidden or not self.is_user_request(row):
                 continue
-            made_id, item, tokens = tables.make_message(conn, self.format, self.tokenizer, channel_id, self.get_parallel_request_text(conn, other, event_text(r) or ""),
-                                              PARALLEL_REQUEST, f"request {r.row_id}")
-            out.append((made_id, item, tokens, r.row_id))
+            made_id, item, tokens = tables.make_message(conn, self.format, self.tokenizer, channel_id, self.get_parallel_request_text(conn, other, event_text(row) or ""),
+                                              PARALLEL_REQUEST, f"request {row.row_id}")
+            out.append((made_id, item, tokens, row.row_id))
         return out
 
-    def get_request_positions(self, conn, refs: list, tail_from: int, rows, types: TypeIds, channel_id,
-                        shown: List[tuple]) -> List[int]:
-        """Where in the context each of `format_time` goes, before any is inserted: where it was in the
+    def get_request_positions(self, conn, refs: list, verbatim_from: int, rows, types: TypeIds, channel_id,
+                        parallel_requests: List[tuple]) -> List[int]:
+        """Where in the context each of `parallel_requests` goes, before any is inserted: where it was in the
         channel's last read (`get_last_read_positions`) -- before the row it came before, or, shown last, before
         the first row after the one it came after -- or, that row condensed away, before the first
-        row of the verbatim part (`refs[tail_from:]`) after it. A request not shown before goes
+        row of the verbatim part (`refs[verbatim_from:]`) after it. A request not shown before goes
         before this channel's latest user message, the call being at it; mid-turn (a step of the
         agent's own after that message), or with none, at the end. Not before the turn's steps: a
         thinking block counts, and the model reads it, only after the history it was written in, so
         a request put before them would leave out all the turn's thinking so far."""
-        mine = [r for r in rows if channel_of(r) == channel_id]
-        own = [r.row_id for r in mine if history.opens_turn(r, types, self.groups)]
-        latest = own[-1] if own else None
+        own_rows = [row for row in rows if channel_of(row) == channel_id]
+        user_message_rows = [row.row_id for row in own_rows if history.opens_turn(row, types, self.groups)]
+        latest_request_row = user_message_rows[-1] if user_message_rows else None
         steps = types.of(*self.groups.messages, *self.groups.tools, *self.groups.verbatim)
-        if latest is not None and any(r.row_id > latest and r.type.id in steps for r in mine):
-            latest = None                                # mid-turn: a new one goes at the end
-        before, after = self.get_last_read_positions(conn, channel_id)
+        if latest_request_row is not None and any(row.row_id > latest_request_row and row.type.id in steps for row in own_rows):
+            latest_request_row = None                                # mid-turn: a new one goes at the end
+        came_before, came_after = self.get_last_read_positions(conn, channel_id)
         places = []
-        for _, _, _, row in shown:
-            if row in after:                             # shown last: right after the row it followed
-                anchor = after[row] + 1
+        for _, _, _, row in parallel_requests:
+            if row in came_after:                             # shown last: right after the row it followed
+                anchor = came_after[row] + 1
             else:
-                anchor = before.get(row, latest)
-            at = len(refs) if anchor is None else next(
-                (i for i in range(tail_from, len(refs)) if refs[i].row_id is not None and refs[i].row_id >= anchor),
+                anchor = came_before.get(row, latest_request_row)
+            position = len(refs) if anchor is None else next(
+                (i for i in range(verbatim_from, len(refs)) if refs[i].row_id is not None and refs[i].row_id >= anchor),
                 len(refs))
-            places.append(at)
+            places.append(position)
         return places
 
     def get_last_read_positions(self, conn, channel_id) -> Tuple[Dict[int, int], Dict[int, int]]:
@@ -281,13 +281,13 @@ class ParallelSessions:
         the second for one shown last, with no row after it (shown mid-turn, at the end). Every request
         since the build's mark is shown on every read, so the last read has each one shown before, in
         its place."""
-        last = conn.last_read(channel.of(channel_id))
-        refs = last["refs"] if last else []
-        made = [r.made_id for r in refs if r.made_id is not None]
-        if not made:
+        last_read = conn.last_read(channel.of(channel_id))
+        refs = last_read["refs"] if last_read else []
+        made_ids = [ref.made_id for ref in refs if ref.made_id is not None]
+        if not made_ids:
             return {}, {}
         sources = dict(conn.execute(f"SELECT made_id, source FROM _made_items WHERE name = ? AND made_id IN "
-                                    f"({','.join('?' * len(made))})", [PARALLEL_REQUEST, *made]).fetchall())
+                                    f"({','.join('?' * len(made_ids))})", [PARALLEL_REQUEST, *made_ids]).fetchall())
         out, waiting, previous = {}, [], None
         for ref in refs:
             if ref.made_id in sources and str(sources[ref.made_id]).startswith("request "):
@@ -307,29 +307,29 @@ class ParallelSessions:
         (`sections.requests_before`). Made at the first read without a build that needs it and reused
         after (the channel's last read, made without a build, has it), so later reads extend the
         same context."""
-        cfg = self.config
-        start = next((r.row_id for r in rows if channel_of(r) == channel_id), None)
+        config = self.config
+        start = next((row.row_id for row in rows if channel_of(row) == channel_id), None)
         if start is None:
             return [], 0
-        last = conn.last_read(channel.of(channel_id))
-        if last and tables.get_basis(last) is None:
-            made = [r.made_id for r in last["refs"] if r.made_id is not None]
-            kept = [(m, item, tokens) for m, (name, item, tokens) in conn.made_items(made).items()
+        last_read = conn.last_read(channel.of(channel_id))
+        if last_read and tables.get_basis(last_read) is None:
+            made_ids = [ref.made_id for ref in last_read["refs"] if ref.made_id is not None]
+            kept = [(made_id, item, tokens) for made_id, (name, item, tokens) in conn.made_items(made_ids).items()
                     if name == PARALLEL_BEFORE]
-            if kept and not self.has_group_changed(conn, types, channel_id, last.get("row_id") or 0):
+            if kept and not self.has_group_changed(conn, types, channel_id, last_read.get("row_id") or 0):
                 return kept[:1], start
-        unseen = self.get_hidden_sessions(conn, types, channel_id)
-        before = [(c, e) for c, e in history.other_requests(conn, types, self.groups, self.tokenizer, channel_id,
-                                                            keep=lambda r: channel_of(r) not in unseen and self.is_user_request(r))
-                  if e.row_id < start]
-        budget, used = cfg.all_task_tokens + cfg.parallel_index_tokens, 0
-        for other, e in before:
-            used += self.tokenizer.count(self.get_parallel_request_text(conn, other, e.text or ""))
+        hidden = self.get_hidden_sessions(conn, types, channel_id)
+        earlier_requests = [(other_channel, entry) for other_channel, entry in history.other_requests(conn, types, self.groups, self.tokenizer, channel_id,
+                                                            keep=lambda row: channel_of(row) not in hidden and self.is_user_request(row))
+                  if entry.row_id < start]
+        budget, used = config.all_task_tokens + config.parallel_index_tokens, 0
+        for other_channel, entry in earlier_requests:
+            used += self.tokenizer.count(self.get_parallel_request_text(conn, other_channel, entry.text or ""))
             if used > budget:
                 break
         else:
             return [], 0                                  # they fit: each a message, as always
-        tables.apply_cleaned_texts(conn, [e for _, e in before])
-        made_id, item, tokens = tables.make_message(conn, self.format, self.tokenizer, channel_id, sections.requests_before(before, budget, self.tokenizer),
+        tables.apply_cleaned_texts(conn, [entry for _, entry in earlier_requests])
+        made_id, item, tokens = tables.make_message(conn, self.format, self.tokenizer, channel_id, sections.requests_before(earlier_requests, budget, self.tokenizer),
                                           PARALLEL_BEFORE, f"requests before {start}")
         return [(made_id, item, tokens)], start

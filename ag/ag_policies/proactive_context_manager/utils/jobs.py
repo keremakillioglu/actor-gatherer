@@ -33,28 +33,28 @@ class BackgroundJobs(Tokens):
             if self.jobs is None:
                 return {}
             if why == COMPACTION:
-                got = self.start_compaction_build(conn, read)
+                outcome = self.start_compaction_build(conn, read)
             elif why == READER:
-                got = self.start_reader_build(conn, read, min_messages)
+                outcome = self.start_reader_build(conn, read, min_messages)
             else:
                 return {}
-            if wait and "started" in got:
+            if wait and "started" in outcome:
                 self.wait_for_build(conn, channel_of(read), read.row_id, "build", self.config.build_timeout,
                                     read.stopped)
-                status = (tables.get_build(conn, got["started"]) or {}).get("status")
-                got["status"] = status if status in ("ready", "failed", "nothing") else "timeout"
-            return got
+                status = (tables.get_build(conn, outcome["started"]) or {}).get("status")
+                outcome["status"] = status if status in ("ready", "failed", "nothing") else "timeout"
+            return outcome
 
     def start_compaction_build(self, conn, read: Read) -> dict:
         """A `compaction` build started: {"started": build_id}. One already running is waited for first, then
         built again: {"status": "timeout"} when it does not finish in time (or the harness gives up on the
         call); {"failed": why} when the worker cannot be started."""
-        cfg, ch = self.config, channel_of(read)
-        build_id = tables.claim_build(conn, ch, cfg.build_timeout, tables.COMPACTION)
+        config, channel_id = self.config, channel_of(read)
+        build_id = tables.claim_build(conn, channel_id, config.build_timeout, tables.COMPACTION)
         if build_id is None:                    # one is running: let it finish, then build again
-            self.wait_for_build(conn, ch, read.row_id, "build", cfg.build_timeout, read.stopped)
+            self.wait_for_build(conn, channel_id, read.row_id, "build", config.build_timeout, read.stopped)
             build_id = None if read.stopped() else \
-                tables.claim_build(conn, ch, cfg.build_timeout, tables.COMPACTION)
+                tables.claim_build(conn, channel_id, config.build_timeout, tables.COMPACTION)
         if build_id is None:
             return {"status": "timeout"}
         failed = self.start_worker(conn, read, build_id)
@@ -66,25 +66,25 @@ class BackgroundJobs(Tokens):
         -- a join aside: it splits nothing of the channel's own history. Adopted as any build is: at the
         channel's next user message. What came of it: {"started": build_id, "messages": n}; {"running":
         build_id}, one already is; {"few": n}, only n such messages since; {"failed": why}."""
-        cfg, ch = self.config, channel_of(read)
-        latest = tables.get_own_latest_build(conn, ch)
-        if latest and latest["status"] == "running" and time.time() - latest["started_at"] < cfg.build_timeout:
-            return {"running": latest["build_id"]}
+        config, channel_id = self.config, channel_of(read)
+        latest_build = tables.get_own_latest_build(conn, channel_id)
+        if latest_build and latest_build["status"] == "running" and time.time() - latest_build["started_at"] < config.build_timeout:
+            return {"running": latest_build["build_id"]}
         types = TypeIds.load(conn)
-        since = conn.execute("SELECT max(through_row) FROM _builds WHERE channel_key = ? AND coalesce(reason, '') != ?",
-                             (tables.get_channel_key(ch), tables.JOIN)).fetchone()[0] or 0
-        n = sum(1 for r in history.rows(conn, types, self.groups, ch)
-                if r.row_id > since and history.opens_turn(r, types, self.groups))
-        if n < min_messages:
-            return {"few": n}
-        build_id = tables.claim_build(conn, ch, cfg.build_timeout, tables.ASKED)
+        built_through = conn.execute("SELECT max(through_row) FROM _builds WHERE channel_key = ? AND coalesce(reason, '') != ?",
+                             (tables.get_channel_key(channel_id), tables.JOIN)).fetchone()[0] or 0
+        new_messages = sum(1 for row in history.rows(conn, types, self.groups, channel_id)
+                if row.row_id > built_through and history.opens_turn(row, types, self.groups))
+        if new_messages < min_messages:
+            return {"few": new_messages}
+        build_id = tables.claim_build(conn, channel_id, config.build_timeout, tables.ASKED)
         if build_id is None:                         # another started one meanwhile
-            return {"running": (tables.get_own_latest_build(conn, ch) or {}).get("build_id")}
+            return {"running": (tables.get_own_latest_build(conn, channel_id) or {}).get("build_id")}
         failed = self.start_worker(conn, read, build_id)
         if failed is not None:
             return {"failed": failed}
-        self.log(f"[{ch}] build {build_id} asked for, {n} user messages since the last")
-        return {"started": build_id, "messages": n}
+        self.log(f"[{channel_id}] build {build_id} asked for, {new_messages} user messages since the last")
+        return {"started": build_id, "messages": new_messages}
 
     def start_build(self, conn, read: Read, reason: str) -> Optional[int]:
         """A build of the read's channel claimed for `reason` and started in the worker: its id, or None --
@@ -104,29 +104,29 @@ class BackgroundJobs(Tokens):
             return str(exc)
         return None
 
-    def wait_for_build(self, conn, channel_id, row_id: int, started: str, seconds: float,
+    def wait_for_build(self, conn, channel_id, row_id: int, started_work: str, wait_seconds: float,
              stopped: Callable[[], bool] = lambda: False) -> bool:
         """Whether the build the read started (or the one its check found a new task for) is ready
-        within `seconds` -- for a check that finds a new task, within build_wait_seconds, if longer:
+        within `wait_seconds` -- for a check that finds a new task, within build_wait_seconds, if longer:
         the check answers in seconds, the build it starts takes tens of them. Not once the harness has
         given up on the call (`stopped`: its user pressed Esc): nothing will be sent, so the read goes on
         without it at once -- the check and the build carry on in the background."""
         begun = time.monotonic()
-        deadline = begun + seconds
-        started = "build" if started == "join" else started
+        deadline = begun + wait_seconds
+        started_work = "build" if started_work == "join" else started_work
         while True:
             if stopped():
-                self.log(f"[{channel_id}] the harness hung up on the call: not waiting for the {started} "
+                self.log(f"[{channel_id}] the harness hung up on the call: not waiting for the {started_work} "
                          f"({time.monotonic() - begun:.1f} s in)")
                 return False
-            if started == "check":
+            if started_work == "check":
                 verdict = tables.get_boundary_verdict(conn, row_id)
                 if verdict and verdict["new_task"] is False:
                     return False
                 if verdict and verdict["new_task"] is True:
-                    started = "build"
+                    started_work = "build"
                     deadline = max(deadline, begun + self.config.build_wait_seconds)
-            if started == "build":
+            if started_work == "build":
                 build = tables.get_own_latest_build(conn, channel_id)
                 if build and build["status"] == "ready":
                     return True

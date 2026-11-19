@@ -94,7 +94,7 @@ def create(conn: sqlite3.Connection) -> None:
     """Create every table that is absent, and add the columns a database made by
     an older version lacks. Idempotent."""
     conn.executescript(SCHEMA)
-    if "reason" not in {r[1] for r in conn.execute("PRAGMA table_info(_builds)")}:
+    if "reason" not in {row[1] for row in conn.execute("PRAGMA table_info(_builds)")}:
         with conn:
             conn.execute("ALTER TABLE _builds ADD COLUMN reason TEXT")     # older builds: NULL
 
@@ -145,8 +145,8 @@ def save_tasks(conn, channel_id, tasks: list) -> None:
         conn.execute("DELETE FROM tasks WHERE channel_key = ?", (get_channel_key(channel_id),))
         conn.executemany(
             "INSERT INTO tasks VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            [(get_channel_key(channel_id), i, t.name, t.description, t.first_row, t.last_row, t.tokens,
-              json.dumps(t.retention)) for i, t in enumerate(tasks)])
+            [(get_channel_key(channel_id), i, task.name, task.description, task.first_row, task.last_row, task.tokens,
+              json.dumps(task.retention)) for i, task in enumerate(tasks)])
     notify_changed(conn, "tasks", channel_id)
 
 
@@ -165,10 +165,10 @@ def save_cleaned(conn, build_id: int, texts: dict) -> None:
 
 def get_cleaned_texts(conn, row_ids) -> dict:
     """{events row_id: cleaned text} for the given rows that have one."""
-    ids = sorted(set(row_ids))
+    unique_ids = sorted(set(row_ids))
     out = {}
-    for i in range(0, len(ids), 900):                       # SQLite's limit on bound parameters
-        chunk = ids[i:i + 900]
+    for i in range(0, len(unique_ids), 900):                       # SQLite's limit on bound parameters
+        chunk = unique_ids[i:i + 900]
         out.update(conn.execute(f"SELECT row_id, text FROM cleaned_messages WHERE row_id IN "
                                 f"({','.join('?' * len(chunk))})", chunk).fetchall())
     return out
@@ -177,10 +177,10 @@ def get_cleaned_texts(conn, row_ids) -> dict:
 def apply_cleaned_texts(conn, entries) -> None:
     """Show each user message in `entries` as its cleaned text, where it has one (in place). Its
     row id -- the [id N] the context names it by -- is the original message's."""
-    texts = get_cleaned_texts(conn, [e.row_id for e in entries])
-    for e in entries:
-        if e.row_id in texts:
-            e.text = texts[e.row_id]
+    texts = get_cleaned_texts(conn, [entry.row_id for entry in entries])
+    for entry in entries:
+        if entry.row_id in texts:
+            entry.text = texts[entry.row_id]
 
 
 def get_own_tasks(conn, channel_id) -> list:
@@ -188,9 +188,9 @@ def get_own_tasks(conn, channel_id) -> list:
     rows = conn.execute(
         "SELECT task_index, name, description, first_row, last_row, tokens, retention_json "
         "FROM tasks WHERE channel_key = ? ORDER BY task_index", (get_channel_key(channel_id),))
-    return [Task(name=r[1], description=r[2] or "", first_row=r[3], last_row=r[4],
-                 tokens=r[5] or 0, retention=json.loads(r[6] or "{}"),
-                 channel_id=channel_id, task_index=r[0]) for r in rows]
+    return [Task(name=row[1], description=row[2] or "", first_row=row[3], last_row=row[4],
+                 tokens=row[5] or 0, retention=json.loads(row[6] or "{}"),
+                 channel_id=channel_id, task_index=row[0]) for row in rows]
 
 
 def get_tasks(conn, channel_id) -> list:
@@ -204,7 +204,7 @@ def get_tasks(conn, channel_id) -> list:
 
 
 def get_channels_with_tasks(conn) -> List[Optional[str]]:
-    return [(k or None) for (k,) in conn.execute(
+    return [(channel_key or None) for (channel_key,) in conn.execute(
         "SELECT DISTINCT channel_key FROM tasks ORDER BY channel_key")]
 
 
@@ -228,7 +228,7 @@ def _as_build(row) -> Optional[dict]:
         return None
     return {"build_id": row[0], "status": row[1], "started_at": row[2], "finished_at": row[3],
             "through_row": row[4], "open_from_row": row[5],
-            "ranking": [tuple(x) for x in json.loads(row[6])] if row[6] else [], "parallel_mark": row[7] or 0,
+            "ranking": [tuple(pair) for pair in json.loads(row[6])] if row[6] else [], "parallel_mark": row[7] or 0,
             "error": row[8], "reason": row[9]}
 
 
@@ -244,23 +244,23 @@ def claim_build(conn, channel_id, timeout: float, reason: str = DIRECT) -> Optio
         if row and row[0] == "running" and now - row[1] < timeout:
             conn.execute("ROLLBACK")
             return None
-        cur = conn.execute("INSERT INTO _builds (channel_key, status, started_at, reason) "
+        cursor = conn.execute("INSERT INTO _builds (channel_key, status, started_at, reason) "
                            "VALUES (?, 'running', ?, ?)", (get_channel_key(channel_id), now, reason))
         conn.execute("COMMIT")
     except Exception:
         conn.execute("ROLLBACK")
         raise
-    notify_changed(conn, "build", channel_id, cur.lastrowid)
-    return cur.lastrowid
+    notify_changed(conn, "build", channel_id, cursor.lastrowid)
+    return cursor.lastrowid
 
 
 def create_build(conn, channel_id, reason: str = DIRECT) -> int:
     """A `running` build row, unconditionally (for a build run directly)."""
     with conn:
-        cur = conn.execute("INSERT INTO _builds (channel_key, status, started_at, reason) "
+        cursor = conn.execute("INSERT INTO _builds (channel_key, status, started_at, reason) "
                            "VALUES (?, 'running', ?, ?)", (get_channel_key(channel_id), time.time(), reason))
-    notify_changed(conn, "build", channel_id, cur.lastrowid)
-    return cur.lastrowid
+    notify_changed(conn, "build", channel_id, cursor.lastrowid)
+    return cursor.lastrowid
 
 
 _SETTLE_FIELDS = ("through_row", "open_from_row", "ranking", "parallel_mark", "error")
@@ -278,7 +278,7 @@ def settle_build(conn, build_id: int, status: str, **fields) -> None:
     for name, value in fields.items():
         if name == "ranking":
             sets.append("ranking_json = ?")
-            values.append(json.dumps([list(x) for x in value]) if value is not None else None)
+            values.append(json.dumps([list(pair) for pair in value]) if value is not None else None)
         elif name == "error":
             sets.append("error = ?")
             values.append((value or "")[:2000] or None)
@@ -328,7 +328,7 @@ def is_joinable(conn, channel_id, keep=None) -> bool:
         return False
     others = conn.execute("SELECT DISTINCT channel_key FROM _builds WHERE status = 'ready' AND channel_key NOT IN (?, '')",
                           (get_channel_key(channel_id),)).fetchall()
-    return any(keep is None or keep(k) for (k,) in others)
+    return any(keep is None or keep(channel_key) for (channel_key,) in others)
 
 
 def get_build(conn, build_id: int) -> Optional[dict]:
@@ -409,26 +409,26 @@ def append(conn, db: str, offset: int) -> None:
     (new ids), cleaned messages and boundary checks, their row ids moved by `offset` -- not the no-channel pool's, whose
     every channel would take it up."""
     def tables(schema):
-        return {r[0] for r in conn.execute(f"SELECT name FROM {schema}.sqlite_master WHERE type = 'table'")}
+        return {row[0] for row in conn.execute(f"SELECT name FROM {schema}.sqlite_master WHERE type = 'table'")}
 
     def columns(table, schema):
-        return [r[1] for r in conn.execute(f"PRAGMA {schema}.table_info({table})")]
+        return [row[1] for row in conn.execute(f"PRAGMA {schema}.table_info({table})")]
 
     here, there = tables("main"), tables(db)
     conn.execute("CREATE TEMP TABLE IF NOT EXISTS build_map (old INTEGER PRIMARY KEY, new INTEGER)")
     conn.execute("DELETE FROM build_map")
     if "_builds" in here and "_builds" in there:
-        cols = [c for c in columns("_builds", db) if c in columns("_builds", "main") and c != "build_id"]
-        for row in conn.execute(f"SELECT build_id, {', '.join(cols)} FROM {db}._builds WHERE channel_key != '' "
+        shared_columns = [column for column in columns("_builds", db) if column in columns("_builds", "main") and column != "build_id"]
+        for row in conn.execute(f"SELECT build_id, {', '.join(shared_columns)} FROM {db}._builds WHERE channel_key != '' "
                                 "ORDER BY build_id").fetchall():
-            values = [v + offset if c in BUILD_ROWS and isinstance(v, int) else v for c, v in zip(cols, row[1:])]
-            cur = conn.execute(f"INSERT INTO _builds ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})", values)
-            conn.execute("INSERT INTO build_map VALUES (?, ?)", (row[0], cur.lastrowid))
+            values = [value + offset if column in BUILD_ROWS and isinstance(value, int) else value for column, value in zip(shared_columns, row[1:])]
+            cursor = conn.execute(f"INSERT INTO _builds ({', '.join(shared_columns)}) VALUES ({', '.join('?' * len(shared_columns))})", values)
+            conn.execute("INSERT INTO build_map VALUES (?, ?)", (row[0], cursor.lastrowid))
     for table, rows in APPENDED.items():
         if table not in here or table not in there:
             continue
-        cols = [c for c in columns(table, db) if c in columns(table, "main")]
-        values = [f"{c} + {int(offset)}" if c in rows else
-                  ("(SELECT new FROM temp.build_map WHERE old = s.build_id)" if c == "build_id" else c) for c in cols]
-        pool = " WHERE s.channel_key != ''" if "channel_key" in cols else ""
-        conn.execute(f"INSERT OR IGNORE INTO {table} ({', '.join(cols)}) SELECT {', '.join(values)} FROM {db}.{table} s{pool}")
+        shared_columns = [column for column in columns(table, db) if column in columns(table, "main")]
+        values = [f"{column} + {int(offset)}" if column in rows else
+                  ("(SELECT new FROM temp.build_map WHERE old = s.build_id)" if column == "build_id" else column) for column in shared_columns]
+        pool = " WHERE s.channel_key != ''" if "channel_key" in shared_columns else ""
+        conn.execute(f"INSERT OR IGNORE INTO {table} ({', '.join(shared_columns)}) SELECT {', '.join(values)} FROM {db}.{table} s{pool}")

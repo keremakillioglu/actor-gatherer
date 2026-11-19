@@ -58,9 +58,9 @@ def is_file_written(call_text: str, subject: str, cwd=None) -> bool:
     remove, an apply_patch, or a script that opens something for writing. Unclear means no."""
     if EDIT_TOOL.match(call_text):
         return any(is_file_mentioned(path, subject, cwd) for path in EDIT_PATH.findall(call_text))
-    for m in WRITE.finditer(call_text):
-        if m.group(0).startswith(">"):                      # a redirect: only into the subject itself
-            if re.match(r">>?\s*['\"\\]*[^\s'\"\\]*" + re.escape(subject), call_text[m.start():]):
+    for match in WRITE.finditer(call_text):
+        if match.group(0).startswith(">"):                      # a redirect: only into the subject itself
+            if re.match(r">>?\s*['\"\\]*[^\s'\"\\]*" + re.escape(subject), call_text[match.start():]):
                 return True
             continue
         return True
@@ -70,13 +70,13 @@ def is_file_written(call_text: str, subject: str, cwd=None) -> bool:
 CD = re.compile(r"(?<![\w\-])cd\s+\\?['\"]?([^\s;&|'\"\\]+)")
 
 
-def has_changed_directory(before: str, cwd) -> bool:
-    """Whether a command, up to here (`before`), changed to a directory other than `cwd`: its last
+def has_changed_directory(command_so_far: str, cwd) -> bool:
+    """Whether a command, up to here (`command_so_far`), changed to a directory other than `cwd`: its last
     `cd` goes anywhere else (a relative one too, but `.`)."""
-    found = list(CD.finditer(before))
-    if not found:
+    cds = list(CD.finditer(command_so_far))
+    if not cds:
         return False
-    target = os.path.expanduser(found[-1].group(1))
+    target = os.path.expanduser(cds[-1].group(1))
     return os.path.normpath(target) != "." and os.path.normpath(target) != os.path.normpath(str(cwd))
 
 
@@ -90,11 +90,11 @@ def is_file_mentioned(text: str, subject: str, cwd=None) -> bool:
     it counts too (`/w/notes.txt` mentions `notes.txt`). With it, only the
     subject itself (`./a.py` too) or the absolute path `cwd`/subject, and
     the subject itself not after a `cd` elsewhere (`cd /x && cat a.py`)."""
-    for m in re.finditer(r"(?<![\w.\-])" + re.escape(subject) + r"(?![\w\-])(?!\.\w)", text):
-        start = m.start()
+    for match in re.finditer(r"(?<![\w.\-])" + re.escape(subject) + r"(?![\w\-])(?!\.\w)", text):
+        start = match.start()
         while start and re.match(PATH_CHAR, text[start - 1]):
             start -= 1
-        path = os.path.expanduser(text[start:m.end()])
+        path = os.path.expanduser(text[start:match.end()])
         if not cwd:
             return True
         if os.path.isabs(path):
@@ -115,21 +115,21 @@ def format_time(timestamp) -> str:
 
 class ExternalEvents(ParallelSessions):
 
-    def make_stream_messages(self, conn, types: TypeIds, channel_id, cut: int) -> List[tuple]:
+    def make_stream_messages(self, conn, types: TypeIds, channel_id, verbatim_start: int) -> List[tuple]:
         """("made", row_id, item, (made_id, tokens)) for each stream message
         of the verbatim part: a developer message worded by the config,
         stored as a made item so the read log shows what was sent; keyed by
         the event's row id so it sorts into its place in the history."""
         out = []
-        for r in self.get_visible_events(conn, types, channel_id, cut, CONTEXT_STREAM):
-            payload = r.payload if isinstance(r.payload, dict) else {}
+        for row in self.get_visible_events(conn, types, channel_id, verbatim_start, CONTEXT_STREAM):
+            payload = row.payload if isinstance(row.payload, dict) else {}
             text = self.config.message.format(stream=payload.get("stream", ""), author=payload.get("author", ""),
                                               text=payload.get("text", ""), timestamp=format_time(payload.get("timestamp")))
-            made_id, item, tokens = tables.make_message(conn, self.format, self.tokenizer, channel_id, text, CONTEXT_STREAM, f"message {r.row_id}")
-            out.append(("made", r.row_id, item, (made_id, tokens)))
+            made_id, item, tokens = tables.make_message(conn, self.format, self.tokenizer, channel_id, text, CONTEXT_STREAM, f"message {row.row_id}")
+            out.append(("made", row.row_id, item, (made_id, tokens)))
         return out
 
-    def make_file_change_notices(self, conn, types: TypeIds, channel_id, cut: int, verbatim,
+    def make_file_change_notices(self, conn, types: TypeIds, channel_id, verbatim_start: int, verbatim,
                 read_properties=None) -> List[tuple]:
         """("made", row_id, item, (made_id, tokens)): one notice per poll, for
         the environment updates of the verbatim part -- in the read's working
@@ -157,50 +157,50 @@ class ExternalEvents(ParallelSessions):
         On the read after the poll, it is the newest thing in the context; on
         later ones it is history, and whatever the model did about it (read
         the file again) comes after it. Each is a made item."""
-        updates = self.get_visible_events(conn, types, channel_id, cut, ENVIRONMENT_UPDATE)
+        updates = self.get_visible_events(conn, types, channel_id, verbatim_start, ENVIRONMENT_UPDATE)
         if not updates:
             return []
-        texts = [(v.row_id, v.type.id, event_text(v)) for v in verbatim]
+        texts = [(row.row_id, row.type.id, event_text(row)) for row in verbatim]
         calls = types.of(TOOL_CALL)
         noticed: Dict[str, Tuple[int, int]] = {}              # subject -> (its last notice's update row, batch start)
         polls: Dict[int, dict] = {}                          # batch start -> {subject: (row id, subject, payload, repeat)}
-        for r in updates:
-            payload = r.payload if isinstance(r.payload, dict) else {}
+        for update in updates:
+            payload = update.payload if isinstance(update.payload, dict) else {}
             subject = payload.get("subject")
-            if not isinstance(subject, str) or not subject or not same_place(r, read_properties):
+            if not isinstance(subject, str) or not subject or not same_place(update, read_properties):
                 continue                                     # another directory's file of that name
-            cwd = cwd_of(r) or cwd_of(read_properties)
-            start = history.batch_start(conn, channel_id, r.row_id)
-            before = noticed.get(subject)
-            if before is not None and before[1] == start:    # changed again in the same poll: its latest
-                polls[start][subject] = (r.row_id, subject, payload, polls[start][subject][3])
-                noticed[subject] = (r.row_id, start)
+            cwd = cwd_of(update) or cwd_of(read_properties)
+            start = history.batch_start(conn, channel_id, update.row_id)
+            previous_notice = noticed.get(subject)
+            if previous_notice is not None and previous_notice[1] == start:    # changed again in the same poll: its latest
+                polls[start][subject] = (update.row_id, subject, payload, polls[start][subject][3])
+                noticed[subject] = (update.row_id, start)
                 continue
-            after = before[0] if before else 0
-            if not any(after < row < r.row_id and tid in calls and is_file_mentioned(text, subject, cwd)
-                       for row, tid, text in texts):
+            after = previous_notice[0] if previous_notice else 0
+            if not any(after < row < update.row_id and type_id in calls and is_file_mentioned(text, subject, cwd)
+                       for row, type_id, text in texts):
                 continue                                     # not seen, or not again since its notice
-            if self.is_own_change(texts, types, start, r.row_id, subject, cwd):
+            if self.is_own_change(texts, types, start, update.row_id, subject, cwd):
                 continue                                     # the agent's own doing
             stamp = payload.get("timestamp")
             if isinstance(stamp, (int, float)) and not isinstance(stamp, bool) and stamp > 10 ** 9:
-                after, through = history.batch_at(conn, channel_id, stamp, r.row_id)
+                after, through = history.batch_at(conn, channel_id, stamp, update.row_id)
                 if self.is_own_change(texts, types, after, through + 1, subject, cwd):
                     continue                                 # its own, made then, reported late
-            polls.setdefault(start, {})[subject] = (r.row_id, subject, payload, before is not None)
-            noticed[subject] = (r.row_id, start)
+            polls.setdefault(start, {})[subject] = (update.row_id, subject, payload, previous_notice is not None)
+            noticed[subject] = (update.row_id, start)
         out = []
         for by_subject in polls.values():
-            found = sorted(by_subject.values(), key=lambda f: f[0])
-            cfg = self.config
-            if len(found) == 1:
-                row, subject, payload, repeat = found[0]
-                text = cfg.notice.format(**self.get_notice_values(subject, payload, repeat))
-            elif len(found) <= cfg.notice_names:
-                text = cfg.notice_named.format(subjects=", ".join(f[1] for f in found))
+            subject_updates = sorted(by_subject.values(), key=lambda update: update[0])
+            config = self.config
+            if len(subject_updates) == 1:
+                row, subject, payload, repeat = subject_updates[0]
+                text = config.notice.format(**self.get_notice_values(subject, payload, repeat))
+            elif len(subject_updates) <= config.notice_names:
+                text = config.notice_named.format(subjects=", ".join(update[1] for update in subject_updates))
             else:
-                text = cfg.notice_counted.format(count=len(found))
-            rows = [f[0] for f in found]
+                text = config.notice_counted.format(count=len(subject_updates))
+            rows = [update[0] for update in subject_updates]
             made_id, item, tokens = tables.make_message(conn, self.format, self.tokenizer, channel_id, text, ENVIRONMENT_UPDATE,
                                               "update " + ",".join(map(str, rows)))
             out.append(("made", rows[0], item, (made_id, tokens)))
@@ -219,5 +219,5 @@ class ExternalEvents(ParallelSessions):
         written it (`is_file_written`). A call that only read the file, or an output that shows it, does not
         hide someone else's change."""
         calls = types.of(TOOL_CALL)
-        return any(start < row < row_id and tid in calls and is_file_mentioned(text, subject, cwd) and is_file_written(text, subject, cwd)
-                   for row, tid, text in texts)
+        return any(start < row < row_id and type_id in calls and is_file_mentioned(text, subject, cwd) and is_file_written(text, subject, cwd)
+                   for row, type_id, text in texts)

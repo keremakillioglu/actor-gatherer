@@ -155,7 +155,7 @@ READS_ADDED = "From now on you are also shown the work of the sessions of these 
 READS_REMOVED = ("You are no longer shown the work of the sessions of these groups, and what you were shown of "
                       "it before is no longer part of yours: {groups}.")
 
-# A left-out note (context_limit.py's `stub_old_steps`): the agent steps it stands for, and where to read them.
+# A left-out note (assembly.py's `stub_old_steps`): the agent steps it stands for, and where to read them.
 LEFT_OUT_NOTE = ("[Agent steps were left out here to keep the context within max_context_tokens: {count} events, "
                  "{tokens} tokens{calls}. Read event rows {first}-{last} from the context database, {db_path}, if you "
                  "need them.]")

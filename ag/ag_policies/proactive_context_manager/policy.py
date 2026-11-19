@@ -71,37 +71,38 @@ class ProactiveContextManager(Assembly, Policy):
         verbatim part refers to. Within the harness's own limit, when the
         call states one (`use_limit`)."""
         with self.use_limit(read.limit):
-            cfg, ch = self.config, channel_of(read)
+            config, channel_id = self.config, channel_of(read)
             types = TypeIds.load(conn)
-            rows = history.rows(conn, types, self.groups, ch)
+            rows = history.rows(conn, types, self.groups, channel_id)
             if not rows:
                 return Context()
-            at_user = history.opens_turn(rows[-1], types, self.groups)
-            latest = tables.get_latest_build(conn, ch)
-            last = conn.last_read(channel.of(ch))
-            self.drift = self.get_provider_drift(last)
-            draft = self.draft_context(conn, types, rows, latest, last, at_user or self.is_build_for_this_turn(latest, rows, types), read)
-            if last and self.has_group_changed(conn, types, ch, last.get("row_id") or 0) \
-                    and self.rebuild_for_new_group(conn, types, read, rows, latest, draft.build):
-                latest = tables.get_latest_build(conn, ch)
-                draft = self.draft_context(conn, types, rows, latest, last, True, read)
-            over = self.is_over_limit(draft.size, last, draft.build, ch)
-            if over and not at_user and tables.is_waiting(latest, last):        # a ready build: taken now, not at the user
-                draft = self.draft_context(conn, types, rows, latest, last, True, read)
-                over = self.is_over_limit(draft.size, last, draft.build, ch)
-            if at_user or over:
-                latest = tables.get_latest_build(conn, ch)
-                started = self.start_due_work(conn, types, read, rows, latest, draft.build, draft.size, over)
+            is_new_user_message = history.opens_turn(rows[-1], types, self.groups)
+            latest_build = tables.get_latest_build(conn, channel_id)
+            last_read = conn.last_read(channel.of(channel_id))
+            self.drift = self.get_provider_drift(last_read)
+            may_switch_build = is_new_user_message or self.is_build_for_this_turn(latest_build, rows, types)
+            draft = self.draft_context(conn, types, rows, latest_build, last_read, may_switch_build, read)
+            if last_read and self.has_group_changed(conn, types, channel_id, last_read.get("row_id") or 0) \
+                    and self.rebuild_for_new_group(conn, types, read, rows, latest_build, draft.build):
+                latest_build = tables.get_latest_build(conn, channel_id)
+                draft = self.draft_context(conn, types, rows, latest_build, last_read, True, read)
+            over_limit = self.is_over_limit(draft.total_tokens, last_read, draft.build, channel_id)
+            if over_limit and not is_new_user_message and tables.is_waiting(latest_build, last_read):        # a ready build: taken now, not at the user
+                draft = self.draft_context(conn, types, rows, latest_build, last_read, True, read)
+                over_limit = self.is_over_limit(draft.total_tokens, last_read, draft.build, channel_id)
+            if is_new_user_message or over_limit:
+                latest_build = tables.get_latest_build(conn, channel_id)
+                started_work = self.start_due_work(conn, types, read, rows, latest_build, draft.build, draft.total_tokens, over_limit)
                 # over the limit, or joining, the read waits for its build however long it takes (up to build_timeout)
-                seconds = cfg.build_timeout if (over and started == "build") or started == "join" else cfg.sync_seconds
-                if started and seconds > 0 and self.wait_for_build(conn, ch, rows[-1].row_id, started, seconds, read.stopped):
-                    latest = tables.get_latest_build(conn, ch)
-                    draft = self.draft_context(conn, types, rows, latest, last, True, read)
-            if self.get_provider_count(draft.size) > cfg.max_context_tokens:   # still over: the steps that do not fit, left out
-                draft = Draft(draft.build, draft.made, *self.assemble_context(conn, rows, draft.build, draft.made, types, read, stub=True))
-            if self.get_provider_count(draft.size) > cfg.max_context_tokens:
-                self.log(f"[{ch}] context {draft.size} tokens ({self.get_provider_count(draft.size)} as the provider counts), "
-                         f"over max_context_tokens={cfg.max_context_tokens}")
-            self.last_tokens = draft.own                    # the part of it the policy arranges
-            return Context(draft.items, draft.refs, str(draft.build["build_id"]) if draft.build else None, tokens=draft.own,
-                           budget=cfg.max_context_tokens)
+                wait_seconds = config.build_timeout if (over_limit and started_work == "build") or started_work == "join" else config.sync_seconds
+                if started_work and wait_seconds > 0 and self.wait_for_build(conn, channel_id, rows[-1].row_id, started_work, wait_seconds, read.stopped):
+                    latest_build = tables.get_latest_build(conn, channel_id)
+                    draft = self.draft_context(conn, types, rows, latest_build, last_read, True, read)
+            if self.get_provider_count(draft.total_tokens) > config.max_context_tokens:   # still over: the steps that do not fit, left out
+                draft = Draft(draft.build, draft.section_ids, *self.assemble_context(conn, rows, draft.build, draft.section_ids, types, read, stub=True))
+            if self.get_provider_count(draft.total_tokens) > config.max_context_tokens:
+                self.log(f"[{channel_id}] context {draft.total_tokens} tokens ({self.get_provider_count(draft.total_tokens)} as the provider counts), "
+                         f"over max_context_tokens={config.max_context_tokens}")
+            self.last_tokens = draft.policy_tokens                    # the part of it the policy arranges
+            return Context(draft.items, draft.refs, str(draft.build["build_id"]) if draft.build else None, tokens=draft.policy_tokens,
+                           budget=config.max_context_tokens)

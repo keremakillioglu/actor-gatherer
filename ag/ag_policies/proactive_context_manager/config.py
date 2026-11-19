@@ -189,18 +189,18 @@ SCALED = ("min_context_tokens", "keep_pinned_tokens", "all_task_tokens", "parall
           "keep_so_far_tokens")
 
 
-def within_limit(cfg: ProactiveContextManagerConfig, limit: int) -> ProactiveContextManagerConfig:
-    """`cfg` for a harness whose own limit is `limit` tokens: max_context_tokens is
+def within_limit(config: ProactiveContextManagerConfig, limit: int) -> ProactiveContextManagerConfig:
+    """`config` for a harness whose own limit is `limit` tokens: max_context_tokens is
     harness_limit_fraction of it; when that is below cfg's, the budgets and
     min_context_tokens shrink in the same proportion, so they fit as they did.
 
     Raises:
         ValueError: the limit leaves too little to fit them.
     """
-    target = int(limit * cfg.harness_limit_fraction)
-    if target == cfg.max_context_tokens:
-        return cfg
-    if target > cfg.max_context_tokens:
-        return replace(cfg, max_context_tokens=target)
-    factor = target / cfg.max_context_tokens
-    return replace(cfg, max_context_tokens=target, **{f: int(getattr(cfg, f) * factor) for f in SCALED})
+    target = int(limit * config.harness_limit_fraction)
+    if target == config.max_context_tokens:
+        return config
+    if target > config.max_context_tokens:
+        return replace(config, max_context_tokens=target)
+    factor = target / config.max_context_tokens
+    return replace(config, max_context_tokens=target, **{field: int(getattr(config, field) * factor) for field in SCALED})

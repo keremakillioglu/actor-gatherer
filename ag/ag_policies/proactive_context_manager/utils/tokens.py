@@ -53,13 +53,13 @@ class Tokens:
             self.config = saved
 
     @staticmethod
-    def get_provider_drift(last: Optional[dict]) -> float:
-        """How far over ag's count the provider counted a call: `last`'s own count (`real_tokens`, reported after
+    def get_provider_drift(last_read: Optional[dict]) -> float:
+        """How far over ag's count the provider counted a call: `last_read`'s own count (`real_tokens`, reported after
         it) over ag's count of all it sent (`sent_tokens`), at most DRIFT_MAX -- 1 when either is not known, or the
         provider counted no more than ag. The hooks set the provider's counts in place of ag's as they learn them (counting.py),
         and what is still ag's (new steps not counted yet; a harness with no count endpoint, all of it) is short
         by about this much."""
-        real, sent = (last or {}).get("real_tokens"), (last or {}).get("sent_tokens")
+        real, sent = (last_read or {}).get("real_tokens"), (last_read or {}).get("sent_tokens")
         if not isinstance(real, int) or not isinstance(sent, int) or sent <= 0 or real <= sent:
             return 1.0
         return min(real / sent, DRIFT_MAX)
@@ -70,23 +70,23 @@ class Tokens:
         by the count that started it."""
         return tokens if self.drift <= 1.0 else int(tokens * self.drift)
 
-    def is_over_limit(self, size: int, last: Optional[dict], build: Optional[dict], ch) -> bool:
+    def is_over_limit(self, size: int, last_read: Optional[dict], build: Optional[dict], channel_id) -> bool:
         """Whether a read's context of `size` tokens is over max_context_tokens: by ag's count, as the provider
         would count it, or by the provider's own count of the last call, which this read extends (`is_provider_over_limit`)."""
-        return self.get_provider_count(size) > self.config.max_context_tokens or self.is_provider_over_limit(last, build, ch)
+        return self.get_provider_count(size) > self.config.max_context_tokens or self.is_provider_over_limit(last_read, build, channel_id)
 
-    def is_provider_over_limit(self, last: Optional[dict], build: Optional[dict], ch) -> bool:
+    def is_provider_over_limit(self, last_read: Optional[dict], build: Optional[dict], channel_id) -> bool:
         """Whether the provider's count of the last call's context (`real_tokens`, reported
         after the call) was over max_context_tokens, and that context is the one this read
         extends: the last read was made from the same build (or, like this one, from none).
         After a build its first call has not been counted yet, so a count from before it
         does not ask for another."""
-        if not last or not last.get("real_tokens"):
+        if not last_read or not last_read.get("real_tokens"):
             return False
-        if last.get("basis") != (str(build["build_id"]) if build else None):
+        if last_read.get("basis") != (str(build["build_id"]) if build else None):
             return False
-        if last["real_tokens"] <= self.config.max_context_tokens:
+        if last_read["real_tokens"] <= self.config.max_context_tokens:
             return False
-        self.log(f"[{ch}] the last call's context was {last['real_tokens']} tokens by the provider's count "
-                 f"(ag counted {last.get('est_tokens')}), over max_context_tokens={self.config.max_context_tokens}")
+        self.log(f"[{channel_id}] the last call's context was {last_read['real_tokens']} tokens by the provider's count "
+                 f"(ag counted {last_read.get('est_tokens')}), over max_context_tokens={self.config.max_context_tokens}")
         return True
