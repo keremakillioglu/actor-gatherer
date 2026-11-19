@@ -295,6 +295,41 @@ export const keptApps = (l: Layout, apps: AppKept[] | null): Layout => {
   else delete out.apps;
   return out;
 };
+type PaneKept = PanesKept["others"][number];
+const panesOf = (l: Layout): PanesKept => l.panes ?? { here: null, others: [] };
+const samePane = (o: PaneKept, g: string, c: string) => o.g === g && o.c === c;
+/** An actor's pane wanted beside the page's own, at place `at` among the others (if it is not one of them already). */
+export function wantPane(l: Layout, pane: PaneKept, at: number): Layout {
+  const p = panesOf(l);
+  if (p.others.some((o) => samePane(o, pane.g, pane.c))) return l;
+  const others = [...p.others];
+  others.splice(Math.max(0, Math.min(at, others.length)), 0, pane);
+  return { ...l, panes: { ...p, others } };
+}
+/** The panes beside for which `drop` says so no longer wanted. */
+export function unwantPanes(l: Layout, drop: (o: PaneKept) => boolean): Layout {
+  const p = panesOf(l);
+  return p.others.some(drop) ? { ...l, panes: { ...p, others: p.others.filter((o) => !drop(o)) } } : l;
+}
+/** The pane of actor `c` of `g` showing actor `to` in its place (as wide). */
+export function retargetPane(l: Layout, g: string, c: string, to: { g: string; c: string; view?: string }): Layout {
+  const p = panesOf(l);
+  if (!p.others.some((o) => samePane(o, g, c))) return l;
+  return { ...l, panes: { ...p, others: p.others.map((o) => (samePane(o, g, c) ? { ...o, ...to } : o)) } };
+}
+/** The page's own pane (its actor, its width), the one in focus, and each pane's view and width, as the page has them
+ * (`look`: a wanted pane's, none if it is not open yet). */
+export function panesNoted(
+  l: Layout,
+  here: [string, string] | null,
+  size: number,
+  focus: number,
+  look: (o: PaneKept) => { view?: string; size?: number } | null,
+): Layout {
+  const p = panesOf(l);
+  return { ...l, panes: { ...p, here, size, focus, others: p.others.map((o) => ({ ...o, ...(look(o) ?? {}) })) } };
+}
+
 /** App panel `app` wanted above the panes (last, if it is not already; its size kept, if given). */
 export function wantApp(l: Layout, app: AppKept): Layout {
   const apps = l.apps || [];

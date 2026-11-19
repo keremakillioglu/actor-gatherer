@@ -114,6 +114,11 @@ class Shadow {
   waitWhile(unknown: () => boolean): void {
     this.unknown = unknown;
   }
+  private panesShown: (() => string[]) | null = null;
+  /** The panes beside the page's own (their actors' item keys): checked against the model's `panes.others`. */
+  panesWith(shown: () => string[]): void {
+    this.panesShown = shown;
+  }
   private appsShown: (() => string[]) | null = null;
   /** The apps' panels the page shows (their instances): checked against the model's `apps`, the panels' source. */
   appsWith(shown: () => string[]): void {
@@ -180,6 +185,11 @@ class Shadow {
       const want = norm((l.apps || []).map((a) => a.instance)),
         shown = norm(this.appsShown());
       if (JSON.stringify(want) !== JSON.stringify(shown)) this.miss("apps", want, shown); // (the model's the source: kept)
+    }
+    if (this.panesShown) {
+      const want = norm((l.panes?.others || []).map((o) => `${o.g}\u0000${o.c}`)),
+        shown = norm(this.panesShown());
+      if (JSON.stringify(want) !== JSON.stringify(shown)) this.miss("panes", want, shown); // (the model's the source)
     }
     if (JSON.stringify(shownNow) !== JSON.stringify(pageShown)) ok = this.miss("tasks shown", shownNow, pageShown);
     const tabs = (ts: { id: string; tasks: string[] }[]) =>

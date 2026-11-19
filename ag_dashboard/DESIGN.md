@@ -383,7 +383,13 @@ The layout slice comes first, in four steps, each with every test passing:
      rest once the host gives it, if still wanted then; one no longer wanted closed, or held out of sight while its
      agent is at work. Panels held for agents at work stay outside the model. The check also compares the model's apps
      with the panels shown.
-   - 4c-3: clicks call the model's functions, one renderer opens and closes panes to match it (in place of the tells,
+   - 4c-3a (built): the panes beside the page's own are the model's `panes.others` (a copy since 4b, now their source):
+     `openBeside` wants one at its place, `closePane` (and every loop closing a task's panes through it) and `closeHere`
+     no longer want one, a pane given another actor (`retarget`) changes its entry, `restorePanes` renders those kept
+     still in the home, and `renderPanes` makes the frames match; `savePanes` notes only the page's own pane, the focus,
+     and each pane's view and width. The check also compares the model's panes with the frames.
+   - 4c-3b: the page's own pane -- its actor, out of sight, a task of apps only -- the model's.
+   - 4c-3c: clicks call the model's functions, one renderer opens and closes panes to match it (in place of the tells,
      and of entering a tab's tasks), `shadow.ts` becomes the layout's store, and the old variables
    (`appsOnly`, `taskNow`, `hereAway`, `tasksLaidOut`, `autoShown`, `taskLayouts`) and the six keys go -- one key,
    `ag-dashboard-layout`. The model then holds each task's open items itself (what `keysNow` reads off the panels now).
