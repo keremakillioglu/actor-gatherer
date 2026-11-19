@@ -1161,6 +1161,31 @@ class EndedTest(SessionsBase):
         self.assertEqual(shown(100.0, 200.0, kept=150.0), (data.IDLE, False))   # the dashboard's own end: kept
         self.assertEqual(shown(100.0, 200.0, pid=42), (data.IDLE, False))       # open here again
 
+    def test_a_turn_cut_off_as_its_process_ended_is_over_once_its_terminal_runs_again(self):
+        """A turn whose end ag never got -- its hook server stopped mid-turn, then the dashboard restarted, closing the
+        terminal and opening it again -- is over, not running until it goes stale: the new process has had nothing."""
+        def shown(last, ended, said_at=None, alive=None, since=None, **session):
+            a = {"channel": "c", "created": 1.0, "last": last, "status": data.RUNNING, "alive": alive, "since": since,
+                 "said_at": said_at, "running": True, "turn_over": False, "building": False, "harness": "claude",
+                 "cwd": "/"}
+            g = [{"name": "g", "agents": [a], "last": last}]
+            data._with_started(g, [{"session_id": "c", "gatherer": "g", "cwd": "/", "harness": "claude", "pid": 42,
+                                    "created_at": "2026-10-24T00:00:00+00:00", "status": "terminal", "kept": 0,
+                                    "ended": ended, **session}], now=1000.0)
+            a = g[0]["agents"][0]
+            return a["status"], a["running"], a["turn_over"]
+        self.assertEqual(shown(100.0, 200.0), (data.IDLE, False, True))        # cut off: over
+        self.assertEqual(shown(300.0, 200.0), (data.RUNNING, True, False))     # a call since, in the new process
+        self.assertEqual(shown(100.0, 200.0, said_at=250.0), (data.RUNNING, True, False))   # a message since, its
+        #                                                                         read not recorded yet
+        self.assertEqual(shown(100.0, 0), (data.RUNNING, True, False))         # never ended here: as the gatherer says
+        self.assertEqual(shown(100.0, 200.0, pid=None), (data.CLOSED, False, False))   # not open again: closed
+        self.assertEqual(shown(100.0, 200.0, alive=True, since=50.0), (data.RUNNING, True, False))  # open elsewhere
+        #                                                                         since before that end: it may go on
+        self.assertEqual(shown(100.0, 200.0, alive=True, since=210.0), (data.IDLE, False, True))   # its new process
+        self.assertEqual(shown(100.0, 200.0, status="running"), (data.RUNNING, True, False))       # the dashboard's
+        #                                                                         own agent at work
+
     def test_a_table_from_before_ended_gets_it_set_for_what_had_run_and_stopped(self):
         self.s.close()
         os.remove(store.path())
