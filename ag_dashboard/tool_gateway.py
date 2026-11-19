@@ -57,6 +57,9 @@ ABOUT = ("The apps of this dashboard: each a panel the user may have open beside
          "may show these tools, and the apps', with a prefix for this server (mcp__ag-apps__apps_list).")
 CLI = ("Run them in your shell, where they reach the dashboard on this machine: `ag apps list`, `ag apps help <app>`, "
        "`ag apps mine`, `ag apps call <app>_<tool> '<JSON arguments>' [--instance ID]` and `ag tasks [path]`.")
+PYTHON = ("From Python -- to loop over an app's tools, or keep what they return out of your context -- `import agapps` "
+          "(on PYTHONPATH in your shell): `agapps.app(\"<app>\").<tool>(...)` calls <app>_<tool>, checked as any call "
+          "is, and returns its text, or its JSON parsed; `help(agapps)` says the rest.")
 LEAD = ("You coordinate this group: you may use every instance of its apps without being in their tasks. A call goes "
         "to the one you name with `instance`, when several are open (a refusal lists them), and, none open, to one "
         "opened for you. Install, uninstall or update an app only when the user asks you to.")
@@ -165,7 +168,7 @@ def instructions(gatherer: str, cli: bool = False, channels: Tuple[str, ...] = (
     apps = on(gatherer)
     if not apps:
         return ""
-    parts = [ABOUT + (" " + CLI if cli else "") + (" " + LEAD if head else ""),
+    parts = [ABOUT + (" " + CLI if cli else "") + " " + PYTHON + (" " + LEAD if head else ""),
              "Installed:\n" + "\n".join(f"- {m.label} ({m.name}): {m.description or m.label} -- used by {WHO[m.access]}"
                                         for m in apps)]
     for m in apps:

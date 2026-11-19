@@ -221,6 +221,18 @@ for apps. An app's event types are ag `EventType`s with ag `Property`s (`Manifes
 - **Agents on harnesses ag gives no MCP to** (Antigravity, Pi and OpenCode: `mcp_args` is `None`) use
   `ag apps call <app> <tool> '<json>'` in their shell. It goes through the same gateway, which knows the caller from
   the session the command runs in, as `ag actors` and `ag preview` work now. `ag preview` becomes this.
+- **From an agent's own Python** (2026-11-19): `import agapps` (`ag/cli/pylib/agapps.py`), then
+  `agapps.app("notes").read(page=...)`. Each method is one call of the app's tool through the same gateway
+  (`/api/apps/agent/call`, as `ag apps call`), so the access check, the instance it goes to, the `app_call` record and
+  the panel's update are all the same as for an MCP call. A script can loop over calls and keep what they return out of
+  the agent's context. Only Python changes on the agent's side, not where the work happens: the app's own libraries
+  (python-pptx, a Google SDK) run in its backend, never in the agent's process, where nothing would check them.
+  - Standard library only, Python 3.8 on: it runs in whatever Python the agent's script runs in, not ag's.
+  - ag's launcher puts its folder at the end of `PYTHONPATH` in every session it starts (`main.PYLIB`), and every
+    agent's apps instructions name it (`tool_gateway.PYTHON`).
+  - A result comes back as its text, its JSON parsed, or an `Image`; a refusal raises `agapps.AppError`.
+  - Who calls is read from the session's environment, as for `ag apps`. A sandbox with no network (Codex's) needs the
+    script run outside it, as `ag apps` does.
 - **A record of each call.** The harness already records the call and its result in the agent's channel
   (`tool_call`, `tool_output`). The gateway also inserts an `app_call` record (instance, tool, caller, ok), so a
   panel can show "this agent did that" without reading the agents' own events.

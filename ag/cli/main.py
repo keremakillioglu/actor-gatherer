@@ -16,6 +16,9 @@ from .launch import LaunchError, Run, adaptor_declarations, load_launcher, resol
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))   # the directory that holds ag/
 GATHERER = re.compile(r"^[A-Za-z0-9._-]+$")
+#: The modules an agent's own Python imports (ag/cli/pylib: agapps, the apps from a script), on PYTHONPATH in every
+#: session ag starts -- after what PYTHONPATH already holds, so nothing of the agent's project is shadowed.
+PYLIB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pylib")
 #: `--gatherer .` (or `[cli] gatherer = "."`): no shared gatherer, one per harness session, named as the harness names it.
 PER_SESSION = "."
 
@@ -59,6 +62,12 @@ def parse(argv: List[str]):
             return opts, a, argv[i + 1:]
         i += 1
     return opts, "help", []
+
+
+def with_pylib(pythonpath: Optional[str]) -> str:
+    """`pythonpath` with PYLIB at its end, once."""
+    held = [p for p in (pythonpath or "").split(os.pathsep) if p]
+    return os.pathsep.join(held if PYLIB in held else [*held, PYLIB])
 
 
 def python_env() -> Dict[str, str]:
@@ -202,6 +211,7 @@ def launch(harness: str, args: List[str], opts, settings) -> int:
 
     section = the_launcher.settings
     env = {**os.environ, **extra_env(section), "AG_HOME": config.home()}
+    env["PYTHONPATH"] = with_pylib(env.get("PYTHONPATH"))
     if env.pop("AG_GATHERER", None):
         # The harness's setup falls back on it; with ag, the gatherer is --gatherer's or [cli] gatherer's alone.
         say("AG_GATHERER is ignored under ag (it is not passed on): use --gatherer, or [cli] gatherer")
