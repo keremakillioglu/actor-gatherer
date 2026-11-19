@@ -27,7 +27,7 @@ from harness_kit.claude import (permission_asked, permission_dialog_keys, permis
 from harness_kit.screen import Screen  # noqa: E402
 from ag.integrations.harnesses.claude.ag_orchestrator import context_manager as claude_ag  # noqa: E402
 from ag.integrations.harnesses.claude.setup import launch  # noqa: E402
-from ag.integrations.harnesses.codex.ag_orchestrator.ag_clients import AgClients  # noqa: E402
+from ag.integrations.tools.ag_orchestrator.ag_clients import AgClients  # noqa: E402
 from ag.integrations.tools.hook_server.hook_server import Answer  # noqa: E402
 from ag_dashboard import answers, chat_view, data, server, sessions, store  # noqa: E402
 from ag_dashboard import home as dashboard_home  # noqa: E402
