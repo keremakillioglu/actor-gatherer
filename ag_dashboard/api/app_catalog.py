@@ -9,6 +9,8 @@ installed, and installing, updating and uninstalling. `ag apps install|uninstall
                               {builtin}          an app that comes with ag, uninstalled, installed again
     POST /api/apps/discard    {id}               the staged app removed
     POST /api/apps/uninstall  {name, data?}      uninstalled; `data`: its data/ deleted too
+    POST /api/apps/settings   {app, agent}       the app opened with an agent of its own from now on, or on its own
+                                                 (app_settings.py) -> {agent}
 
 With `actor` -- `ag apps` run in an agent's shell, which says who asks -- install and uninstall only ask the user
 (app_requests.py): {waiting: the request}, done once the user approves it in the dashboard:
@@ -26,7 +28,7 @@ from starlette.responses import Response
 from app_kit import AppError
 from app_kit.installing import InstallError
 
-from .. import app_catalog, app_requests
+from .. import app_catalog, app_requests, app_settings
 from .common import Body, Errors, Parts, answer, failure, local_only
 
 router = APIRouter(route_class=Errors)
@@ -95,6 +97,20 @@ def apps_uninstall(srv: Parts, body: Body) -> Response:
         return _run(lambda: {"waiting": app_requests.ask(_host(srv), srv.sessions.list(), str(body["actor"]),
                                                          "uninstall", args)})
     return _run(lambda: app_catalog.uninstall(_host(srv), str(body.get("name") or ""), bool(body.get("data"))))
+
+
+@router.post("/api/apps/settings")
+def apps_settings(srv: Parts, body: Body) -> Response:
+    """{app, agent}: the app, opened from a menu, started with an agent of its own (`agent`) or on its own, from now on.
+    Only for an app that can have one."""
+    def chosen():
+        name = str(body.get("app") or "")
+        if not isinstance(body.get("agent"), bool):
+            raise AppError("agent: true or false")
+        if not _host(srv).hosted(name).manifest.agent.offered:
+            raise AppError(f"{name} has no agent of its own to open with")
+        return app_settings.choose(name, body["agent"])
+    return _run(chosen)
 
 
 @router.get("/api/apps/requests", dependencies=[Depends(local_only)])

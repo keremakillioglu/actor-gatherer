@@ -1598,14 +1598,17 @@ const startAny = (gatherer, cwd, harness) => harness === SHELL_START ? startShel
   : harness.startsWith(APP_START) ? startWithApp(gatherer, cwd, ...appStart(harness))
   : startSession(gatherer, cwd, harness);
 const appStart = (v) => { const [name, ...h] = v.slice(APP_START.length).split(":"); return [name, h.join(":")]; };
-// The apps found that can be opened with an agent of their own (DocWriter, say): those a new actor can be started with.
-// THE APPS OFFERED, one order wherever they are listed (a group's "+ ⋯" menu, the new-tab page): each app by its name
-// (openableApps), then those that can have an agent of their own, again by name ("… with an agent": startingApps), then a
-// terminal -- "…" only on an entry that opens a box to fill in first.
+// THE APPS OFFERED, one order wherever they are listed (a group's "+ ⋯" menu, the new-tab page): each app once, by its
+// name (openableApps), then a terminal -- "…" only on an entry that opens a box to fill in first. An app that can have an
+// agent of its own (DocWriter, say) opens the way the reader chose on the Apps page (app_settings.py's `opens_with_agent`,
+// yes until they say not): with a new actor attached to it (opensWithAgent), or on its own -- on its own also when no
+// harness here can give an agent its tools (`tooled`). startingApps: those that open with one, which the list's form
+// for a new actor also offers on each harness.
 const byLabel = (x, y) => x.label.localeCompare(y.label);
 const openableApps = () => (PANE || SNAPSHOT || !window.agNext ? [] : window.agNext.apps.found()).filter((a) => !a.failed).sort(byLabel);
-const startingApps = () => (PANE || SNAPSHOT || !window.agNext ? [] : window.agNext.apps.found())
-  .filter((a) => a.agent && a.agent.offered && !a.failed).sort(byLabel);
+const withAgentChosen = (a) => !!(a.agent && a.agent.offered && a.opens_with_agent !== false);
+const opensWithAgent = (a, tooled) => withAgentChosen(a) && tooled.length > 0;
+const startingApps = () => openableApps().filter(withAgentChosen);
 const cwdOf = (a) => a.cwd || (a.session && a.session.cwd) || "";    // a session started here: its own, before any call names one
 const startCwd = (g) => cwdOf(g.agents.filter(cwdOf).sort((x, y) => (y.last || 0) - (x.last || 0))[0] || {});
 // A coordinator agent's button (CREW_START), on its node's row -- a group's, a folder's, a folder of groups', the list's
@@ -1703,11 +1706,10 @@ function moreStarts(g, hs, where, key = `more:${g.name}`) {
   return [
     hs.length ? { icon: ICONS.branch, text: "Actor on a branch…", note: "in its own worktree, merged into the project",
       run: (button) => openBranchMenu(g, button) } : null,
-    ...openableApps().map((a) => ({ icon: ICONS.app, mark: a.mark ? appMarkImg(a) : null, text: a.label,
-      run: () => openAppTab(g.name, a.name, startCwd(g)) })),
-    ...(tooled.length ? startingApps() : []).map((a) => ({ icon: ICONS.app, mark: a.mark ? appMarkImg(a) : null,
-      text: `${a.label} with an agent…`,
-      run: (button) => openPop(key, button, appStartBox(g, tooled, a)) })),
+    ...openableApps().map((a) => ({ icon: ICONS.app, mark: a.mark ? appMarkImg(a) : null,
+      ...(opensWithAgent(a, tooled)
+        ? { text: `${a.label}…`, run: (button) => openPop(key, button, appStartBox(g, tooled, a)) }   // and its actor
+        : { text: a.label, run: () => openAppTab(g.name, a.name, startCwd(g)) }) })),
     // (where it opens: the menu's heading says it)
     state.home.terminals !== false ? { icon: ICONS.terminal, text: "Terminal", note: where ? null : there, run: () => addSession(g, SHELL_START) } : null,
   ].filter(Boolean);
@@ -2331,7 +2333,7 @@ export {
   renderApps, appClosed, showAppPanel, CREW_GROUP, actorPanes, addAppPane, appMarkImg, appPaneTask, appPanelMenu, appSelected, appsAtWork, appsOnlyKey,
   appsOnlyLeft, appsSelected, branchChip, byLabel, closeAppPane, closeHere, closeHerePane, closePane, closePop,
   closedInTabs, crewButton, cwdOf, drawWho, enterAppTask, focusPane, focusedActor, focusedPane, folderPicks, holdAppPane, isAt,
-  isAway, linkClicked, moveEnd, newForm, noHarness, openActors, openApp, openAppTab, openPop, openTaskBeside, paneNote,
+  isAway, linkClicked, moveEnd, newForm, noHarness, openActors, openApp, openAppTab, openPop, openTaskBeside, opensWithAgent, paneNote,
   paneOf, paneReady, paneSig, paneUrl, panesTake, pick, pickBeside, placeIfShown, placeWork, popButton, popMenu,
   railMore, railNew, railNewBox, rekeyTask, retarget, rememberTask, restoreAppPanes, restorePanes, rowMore, rowPop, saveAppPanes,
   savePanes, selectAppPane, selectedTask, setAutoShown, show, showActorsApp, shownPanels, startButtons, startCwd,
