@@ -6,7 +6,9 @@ goes there. A click calls no tool, attaches no agent and is no event: the user o
 
 An app says which paths it takes in its manifest's [[links]], each a `form` -- segments split by "/", each a word, or a
 `<name>` standing for one segment, or a last `<name...>` for the rest of the path -- and what agents are told of it
-(`about`). Only a path matching one of its forms is opened; the `<name>` segments are handed to the panel, decoded, as
+(`about`). An app that shows files takes FILE_FORM; the page opens a file's path an agent writes with no app named (a
+plain `[a.py](src/a.py#L3)`) in one of them -- the one whose FILE_FORM says `paths`, if one does (the Files app's).
+ Only a path matching one of its forms is opened; the `<name>` segments are handed to the panel, decoded, as
 `values`. `#<part>` (a line of a page, a line of a file) is the app's to read, and `about` says what it takes.
 
     Link                 one of an app's forms: `form`, `about`, and `match(path)` -> its values, else None
@@ -23,6 +25,7 @@ from dataclasses import dataclass, field
 from typing import Dict, Optional, Pattern, Tuple
 
 SCHEME = "ag"
+FILE_FORM = "file/<path...>"    # a file, by its absolute path (its first "/" left out); `#L<line>` for a line
 #: A form's segments: a word ("page"), a `<name>` (one segment), or a last `<name...>` (the rest of the path).
 WORD = re.compile(r"^[A-Za-z0-9._~-]+$")
 VALUE = re.compile(r"^<([a-z][a-z0-9_]{0,31})(\.\.\.)?>$")
@@ -35,6 +38,7 @@ class Link:
     """One of an app's [[links]]: its `form` ("page/<id>") and what agents are told of it."""
     form: str
     about: str = ""
+    paths: bool = False         # FILE_FORM only: a file's path written with no app named opens here
     pattern: Pattern = field(default=None, compare=False, repr=False)
     names: Tuple[str, ...] = ()
 
@@ -52,7 +56,7 @@ class Link:
         return out
 
 
-def form(text: str, about: str = "") -> Link:
+def form(text: str, about: str = "", paths: bool = False) -> Link:
     """The Link of a form, its pattern compiled; ValueError saying what is wrong with it."""
     if not isinstance(text, str) or "" in text.split("/"):
         raise ValueError(f"{text!r}: segments split by \"/\", none empty, no \"/\" at either end")
@@ -72,7 +76,9 @@ def form(text: str, about: str = "") -> Link:
             raise ValueError(f"{text!r}: {s!r} is neither a word (letters, digits, . _ ~ -) nor a <name>")
     if len(about) > ABOUT_CHARS:
         raise ValueError(f"about: at most {ABOUT_CHARS} characters")
-    return Link(form=text, about=about, pattern=re.compile("^" + "/".join(out) + "$", re.S), names=tuple(names))
+    if paths and text != FILE_FORM:
+        raise ValueError(f"paths: for {FILE_FORM!r} only, the form a file's path is opened by")
+    return Link(form=text, about=about, paths=paths, pattern=re.compile("^" + "/".join(out) + "$", re.S), names=tuple(names))
 
 
 @dataclass(frozen=True)

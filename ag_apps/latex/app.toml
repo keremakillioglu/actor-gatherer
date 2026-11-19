@@ -1,0 +1,126 @@
+# The LaTeX editor: a paper's files edited live, as the Files app edits them (app_kit.fileedit: every page with a file
+# open, and the file on disk, one more of its editors -- the lines the user is editing, its conflict zone, asked about),
+# and beside the file its build: the command that builds the paper (latexmk on its main .tex, until another is set),
+# set by the user or an agent, run by either (Execute, ⌘↵), and the PDF it makes -- a source line to its place in the
+# PDF and back (SyncTeX), the build's errors and warnings listed and marked on their lines. The command can be any (a
+# dev server, an HTML build): what it makes is shown beside the file. One per LaTeX editor started, on a folder, with
+# an agent of its own (started with it), who alone is given its tools and instructions -- as the Browser and
+# DocWriter are. Lines selected in a file are sent from there to any actor of the gatherer, with what to do, as the
+# user's message (message_actors).
+name = "latex"
+label = "LaTeX"
+version = "1"
+description = "edit a paper's LaTeX live with your actors, build it and see the PDF"
+instances = "many"
+access = "task"
+mark = "mark.svg"
+replaces = ["editor"]
+instructions = """You work with the user's LaTeX editor, in the dashboard: it edits the files of a folder (a paper's) live,
+the user and you together. Change files with its tools -- latex_read, latex_edit (old_string -> new_string, as your own
+Edit), latex_write (a whole file) -- not your own edit tools or shell commands: they work on any file, and a file the user
+has open is changed there, as its mode says. Live (the default): your change shows to the user as it lands and is written
+to the file, but one to lines they are editing is held for them to settle. Review: each change is a proposal they accept
+or reject in their own time -- propose and carry on with your task, never waiting for them; your next edits build on
+your proposals (latex_read shows them in), and the file on disk changes only when they accept. Hands off: do not change
+files they have open; ask them first. You are told when they settle a change of yours, and when the mode changes.
+latex_open shows the user a file, at a line. Beside the file it shows the paper's build -- the command that builds it,
+latexmk on its main .tex unless another is set (any command will do: a dev server, an HTML build) -- and what it makes:
+the PDF, a file it writes, the page of a server it starts, or its output. Set it with latex_preview_set (command, and
+`show`: a path in the checkout or a URL; {file}, {stem}, {name}, {dir} name the file open), and run it with
+latex_preview_run, once the user has let that command run: a command you set waits for them to run it in the LaTeX
+editor first. A build's errors and warnings come back as `file:line: message`. latex_preview_show says what it is now;
+latex_preview_stop stops its run. The same from the shell: `ag preview` (see `ag preview --help`)."""
+
+[agent]
+offered = true
+name = "LaTeX · {folder}"
+
+[backend]
+python = "backend:LatexApp"
+
+[panel]
+entry = "panel/index.html"
+
+[capabilities]
+docs = true
+actors = true
+edit_guard = true
+message_actors = true
+
+[[tools]]
+name = "read"
+description = "Read a file as the user's LaTeX editor has it: with what they typed and have not saved, if it is open there (in Review, your waiting changes in). Lines numbered, as your own Read."
+input_schema = { type = "object", properties = { path = { type = "string", description = "the file: absolute, or from your working directory" }, offset = { type = "integer", description = "the first line (default 1)" }, limit = { type = "integer", description = "how many lines (default 2000)" } }, required = ["path"] }
+
+[[tools]]
+name = "edit"
+description = "Change a file: old_string, which must be in it once (or replace_all), replaced by new_string -- through the user's LaTeX editor if it is open there (shown as it lands, or a proposal for them to review, as its mode says), else on disk."
+input_schema = { type = "object", properties = { path = { type = "string", description = "the file: absolute, or from your working directory" }, old_string = { type = "string" }, new_string = { type = "string" }, replace_all = { type = "boolean", description = "every place old_string is (default false)" } }, required = ["path", "old_string", "new_string"] }
+
+[[tools]]
+name = "write"
+description = "Write a whole file (made if it is not there) -- through the user's LaTeX editor if it is open there, as latex_edit, else on disk."
+input_schema = { type = "object", properties = { path = { type = "string", description = "the file: absolute, or from your working directory" }, content = { type = "string", description = "the whole file" } }, required = ["path", "content"] }
+
+[[tools]]
+name = "open"
+description = "Show the user a file in their LaTeX editor, at a line: to point them at something."
+input_schema = { type = "object", properties = { path = { type = "string" }, line = { type = "integer" } }, required = ["path"] }
+
+[[tools]]
+name = "preview_show"
+description = "The project's build (its command and what it shows), and its latest run."
+input_schema = { type = "object", properties = { path = { type = "string", description = "a file or folder of the project (default: your working directory)" } } }
+
+[[tools]]
+name = "preview_set"
+description = "Set the project's build: a command run through the shell in the checkout, and what it shows."
+input_schema = { type = "object", properties = { command = { type = "string", description = "run in the checkout; none: what it shows is shown as it is" }, show = { type = "string", description = "a path in the checkout, or a URL (the command a server); none: its output" }, path = { type = "string", description = "a file or folder of the project (default: your working directory)" } } }
+
+[[tools]]
+name = "preview_run"
+description = "Run the project's build now, as the user has let it run; waits `wait` seconds (default 0) for it to end, or its server to answer, and says how it went -- a LaTeX build: its log's errors and warnings too, as `file:line: message` (run.problems)."
+input_schema = { type = "object", properties = { file = { type = "string", description = "the file {file} names" }, wait = { type = "number" }, path = { type = "string", description = "a file or folder of the project (default: your working directory)" }, ok = { type = "string", description = "the user's own, from the LaTeX editor: the command they let run" } } }
+
+[[tools]]
+name = "preview_stop"
+description = "Stop the build's run (its server, if it starts one)."
+input_schema = { type = "object", properties = { path = { type = "string" } } }
+
+[[tools]]
+name = "preview_clear"
+description = "No build for the project any more."
+input_schema = { type = "object", properties = { path = { type = "string" } } }
+
+[[events]]
+name = "latex.mode"
+description = "The LaTeX editor's mode, set: {mode (live, review, handsoff), by}."
+
+[[events]]
+name = "latex.preview_set"
+properties = ["by"]
+description = "A project's build set: {key (its repository), command, show, by} (by: \"\" the user, else the agent's channel)."
+
+[[events]]
+name = "latex.preview_allowed"
+description = "A command an agent set, let run by the user: {key, command}."
+
+[[events]]
+name = "latex.preview_cleared"
+description = "No build for the project any more: {key}."
+
+[[events]]
+name = "latex.preview_ran"
+description = "A run, once over: {key, checkout, command, show, by, file, state, code, started, ended}."
+
+# A file, from a link to it (app_kit/links.py): shown at a line, in the LaTeX editor -- a plain file path an agent writes
+# opens in the Files app instead (its `paths`).
+[[links]]
+form = "file/<path...>"
+about = "A file of the paper, in this LaTeX editor: its absolute path after file/, as in `ag://latex/file/Users/me/paper/main.tex`. Add #L<line> for a line."
+
+# A LaTeX source or bibliography shown -- in a LaTeX editor open (else in the Files app open, else a new LaTeX editor, on
+# its folder).
+[[handles]]
+intent = "open-file"
+types = ["text/x-tex", "text/x-bibtex"]

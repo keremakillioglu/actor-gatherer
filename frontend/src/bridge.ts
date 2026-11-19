@@ -77,6 +77,7 @@ const agNext = Object.freeze({
     attachedTo: apps.attachedTo,
     start: apps.start,
     handler: apps.handler,
+    handlers: apps.handlers,
     /** Links to things in apps, `ag://<app>/<path>` (features/apps/links.ts): read, and matched to an app's forms; and
      * a file's path an agent writes, read and made a link of an app's FILE_FORM. */
     links: Object.freeze({

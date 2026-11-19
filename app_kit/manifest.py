@@ -258,6 +258,9 @@ class Manifest:
     schedules: Tuple[Schedule, ...] = ()      # work its backend does on its own, at its times (App.scheduled)
     capabilities: Capabilities = field(default_factory=Capabilities)
     folder: Optional[str] = None
+    #: Apps it takes the place of: an instance of one of them -- the app gone (removed, or split into others) -- is
+    #: taken over by this one, as its backend says (App.takes_over), the app it was opened as no longer found.
+    replaces: Tuple[str, ...] = ()
 
     def link(self, path: str) -> Optional[Tuple["_links.Link", Dict[str, str]]]:
         """The first of its [[links]] a path (%-encoded, as in a link) is of, and its values; None: none."""
@@ -314,7 +317,8 @@ class Manifest:
                        for e in self.events],
             "pollers": [{"name": p.name, "class": p.cls, "file": p.file, "args": p.args} for p in self.pollers],
             "handles": [{"intent": h.intent, "types": list(h.types)} for h in self.handles],
-            "links": [{"form": k.form, "about": k.about} for k in self.links],
+            "links": [{"form": k.form, "about": k.about, **({"paths": True} if k.paths else {})} for k in self.links],
+            "replaces": list(self.replaces),
             "schedules": [s.to_dict() for s in self.schedules],
             "capabilities": {"native_view": self.capabilities.native_view, "reads": list(self.capabilities.reads),
                              "files": self.capabilities.files, "commands": self.capabilities.commands,
@@ -363,7 +367,7 @@ def parse(data: Dict[str, Any], folder: Optional[str] = None, where: str = FILE)
     r = _Reader(where)
     _known(r, data, "", ("name", "label", "version", "description", "instances", "access", "offer", "instructions",
                          "instructions_file", "agent", "asked", "mark", "backend", "panel", "tools", "tools_file",
-                         "events", "pollers", "handles", "links", "schedules", "capabilities"))
+                         "events", "pollers", "handles", "links", "schedules", "capabilities", "replaces"))
     name = r.string(data, "name")
     if not NAME.match(name):
         r.fail("name", f"{name!r}: lowercase letters, digits and _, starting with a letter, at most 24")
@@ -452,12 +456,18 @@ def parse(data: Dict[str, Any], folder: Optional[str] = None, where: str = FILE)
         r.fail("schedules", "a schedule named twice")
     if schedules and not (backend.python or backend.command):
         r.fail("schedules", "a schedule runs its backend, and the app has no [backend]")
+    replaces = r.strings(data, "replaces")
+    for i, gone in enumerate(replaces):
+        if not NAME.match(gone) or gone == name:
+            r.fail(f"replaces[{i}]", f"{gone!r}: another app's name")
+    if replaces and not (backend.python or backend.command):
+        r.fail("replaces", "its backend says which instances it takes over, and the app has no [backend]")
     return Manifest(name=name, label=r.string(data, "label", name), version=r.string(data, "version", "0"),
                     description=r.string(data, "description", ""), instances=instances, access=access,
                     instructions=instructions, agent=agent, asked=asked, mark=mark,
                     backend=backend, panel=panel, tools=tools, events=events, pollers=pollers, handles=handles,
                     links=links, schedules=schedules, capabilities=_capabilities(r, data.get("capabilities", {})),
-                    folder=folder)
+                    folder=folder, replaces=replaces)
 
 
 class _Reader:
@@ -637,9 +647,10 @@ def _handles(r: _Reader, i: int, d: dict) -> Handles:
 
 def _link(r: _Reader, i: int, d: dict) -> "_links.Link":
     at = f"links[{i}]."
-    _known(r, d, at, ("form", "about"))
+    _known(r, d, at, ("form", "about", "paths"))
     try:
-        return _links.form(r.string(d, "form", at=at), r.string(d, "about", "", at=at).strip())
+        return _links.form(r.string(d, "form", at=at), r.string(d, "about", "", at=at).strip(),
+                           r.flag(d, "paths", at))
     except ValueError as exc:
         r.fail(at + "form", str(exc))
 

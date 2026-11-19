@@ -55,7 +55,7 @@ include = ["ag*", "harness_kit*", "app_kit*", "ag_apps*"]
 # dashboard's page, its actors' avatars and what they say, and its icons as an app
 ag = ["cli/harnesses.toml", "integrations/**/*.ts"]
 harness_kit = ["marks/*.svg"]
-app_kit = ["js/*.js", "DESIGN.md"]
+app_kit = ["js/*.js", "DESIGN.md", "fileedit/panel/*", "fileedit/panel/**/*"]
 ag_apps = ["index.toml", "*/app.toml", "*/tools.json", "*/slack_app_manifest.json", "*/instructions.md", "*/mark.svg",
            "*/panel/*", "*/panel/**/*"]
 ag_dashboard = ["static/*", "static/assets/*", "gatherer_agent.md", "vendor/*", "vendor/pdfjs/**/*", "examples/*.js", "avatars/*/*.svg", "avatars/hello.toml", "icons/*.png"]

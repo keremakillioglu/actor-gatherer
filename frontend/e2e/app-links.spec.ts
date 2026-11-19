@@ -75,24 +75,24 @@ test("a link to no place an app lists, or to no app, opens nothing and says why"
   expect(page.url()).not.toContain("ag:");
 });
 
-test("a link to a file opens it in the agent's own Editor, at its line", async ({ page }) => {
+test("a link to a file in the LaTeX editor opens it in the agent's own, at its line", async ({ page }) => {
   const { repo } = project();
   const other = path.join(repo, "notes.txt");
   fs.writeFileSync(other, "one\ntwo\nthree\n");
-  // an Editor of the actor's, on the project (the test home's actors have no folder to open one on)
+  // a LaTeX editor of the actor's, on the project (the test home's actors have no folder to open one on)
   const opened = await page.request.post("/api/apps/open", {
-    data: { app: "editor", gatherer: GATHERER, folder: repo, channel: CLAUDE_CHANNEL },
+    data: { app: "latex", gatherer: GATHERER, folder: repo, channel: CLAUDE_CHANNEL },
   });
   const editor = ((await opened.json()) as { id: string }).id;
   await openActor(page, CLAUDE);
-  // its absolute path after file/, as the Editor's [[links]] say
-  await (await says(page, "said-5", `See [line 2](ag://editor/file${other}#L2).`)).click();
-  const shown = editorPane(page).filter({ visible: true });
+  // its absolute path after file/, as the LaTeX editor's [[links]] say
+  await (await says(page, "said-5", `See [line 2](ag://latex/file${other}#L2).`)).click();
+  const shown = editorPane(page, "latex").filter({ visible: true });
   await expect(shown).toHaveCount(1);
-  await expect(editorPane(page)).toHaveCount(1); // and no other, out of sight
+  await expect(editorPane(page, "latex")).toHaveCount(1); // and no other, out of sight
   expect(new URL((await shown.locator("iframe").getAttribute("src")) || "").searchParams.get("instance")).toBe(editor);
-  await expect(editorPanel(page).locator(".ed-head .ed-path")).toContainText("notes.txt");
-  await expect(editorPanel(page).locator(".cm-activeLine")).toHaveText("two");
+  await expect(editorPanel(page, "latex").locator(".ed-head .ed-path")).toContainText("notes.txt");
+  await expect(editorPanel(page, "latex").locator(".cm-activeLine")).toHaveText("two");
   await page.request.post("/api/apps/close", { data: { gatherer: GATHERER, instance: editor } });
 });
 
@@ -104,17 +104,22 @@ async function instances(page: Page, app: string): Promise<string[]> {
     .map((i) => i.id);
 }
 
-test("a file's path an agent writes opens in the Editor open in the group, at its line: no other made", async ({
+test("a file's path an agent writes opens in the Files app open in the group, at its line: no other made", async ({
   page,
 }) => {
   const { repo } = project();
   const file = path.join(repo, "paths.txt");
   fs.writeFileSync(file, "one\ntwo\nthree\n");
-  // an Editor on its own (in no task, no agent's), as one opened from the menu is
+  // a Files app, as one opened from the menu is (the group's: in no task); and a LaTeX editor of the actor's, which a
+  // plain path does not go to -- the Files app's FILE_FORM says `paths`
   const opened = await page.request.post("/api/apps/open", {
-    data: { app: "editor", gatherer: GATHERER, folder: repo },
+    data: { app: "files", gatherer: GATHERER, folder: repo },
   });
   const editor = ((await opened.json()) as { id: string }).id;
+  const latex = await page.request.post("/api/apps/open", {
+    data: { app: "latex", gatherer: GATHERER, folder: repo, channel: CLAUDE_CHANNEL },
+  });
+  const theirs = ((await latex.json()) as { id: string }).id;
   await openActor(page, CLAUDE);
   const link = await says(page, "said-6", `In [paths.txt](${file}#L2).`);
   await expect(link).toHaveAttribute("data-path", "");
@@ -130,8 +135,11 @@ test("a file's path an agent writes opens in the Editor open in the group, at it
   // file:// and a line after a colon, as a terminal's link has it: the same Editor
   await (await says(page, "said-7", `[it](file://${file}:3)`)).click();
   await expect(editorPanel(page).locator(".cm-activeLine")).toHaveText("three");
-  expect(await instances(page, "editor")).toEqual([editor]);
+  expect(await instances(page, "files")).toEqual([editor]);
+  await expect(editorPanel(page, "latex").locator(".ed-head .ed-path")).toHaveCount(0); // its LaTeX editor: no file shown
   await expect(page.locator("#pane-here")).toBeVisible(); // the actor still below it
+  await page.request.post("/api/apps/close", { data: { gatherer: GATHERER, instance: editor } });
+  await page.request.post("/api/apps/close", { data: { gatherer: GATHERER, instance: theirs } });
 });
 
 test("a relative path from an actor with no folder opens nothing and says why", async ({ page }) => {

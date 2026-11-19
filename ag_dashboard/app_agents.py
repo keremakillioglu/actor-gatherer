@@ -17,7 +17,9 @@ here, so they make the same thing:
     adopt_all(started, host)   each session whose role names an app the host has (an app's actor from before it was
                        an app: DocWriter's, {"docwriter": key}) attached to that app's instance of that key -- made, if
                        it is not yet, on the session's folder (app_host.py's `adopt`): at the server's start, once
-                       each (the host's events keep it)
+                       each (the host's events keep it). One whose role names an app no longer found, whose instance
+                       another app took over (its manifest `replaces` the one gone: app_host.py's `_taken_over`), is
+                       given that app's role first
 """
 
 import json
@@ -62,6 +64,14 @@ def adopt_all(started: "sessions.Sessions", host) -> None:
         return
     for s in started.list():
         got = role_of(s)
+        if got is not None and got[0] not in host.apps:       # its app gone: taken over by another, if one took it
+            try:
+                now = host.moved(s["gatherer"], got[1])
+            except Exception:  # noqa: BLE001 - one actor's trouble is not the others'
+                now = None
+            if now is not None and now != got[0]:
+                started.set_role(s["session_id"], role(now, got[1]))
+                got = (now, got[1])
         if got is None or got[0] not in host.apps:
             continue
         name, key = got

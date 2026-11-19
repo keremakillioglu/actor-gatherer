@@ -19,9 +19,13 @@ from ag_dashboard import mcp  # noqa: E402
 
 DASHBOARD = os.path.join(ROOT, "ag_dashboard")
 OWN: set = set()                                                  # none of the dashboard's modules is an app's own
+#: Words an app is named by that are the dashboard's own, from before the app was: "files", its Files view's (files.py,
+#: Chat's files and commands) -- the Files app's name and label. Not looked for: a module naming that app would not be
+#: told apart from one saying its own word.
+OWN_WORDS = {"files"}
 NAMES = sorted({w.lower() for m in app_kit.finding.find(os.path.join(ROOT, "no-home"))[0].values()
                 for w in (m.name, m.label)
-                if os.path.dirname(m.folder or "") == os.path.join(ROOT, "ag_apps")})   # the apps that come with ag
+                if os.path.dirname(m.folder or "") == os.path.join(ROOT, "ag_apps")} - OWN_WORDS)   # the apps that come with ag
 SAID = re.compile("(?i)" + "|".join(map(re.escape, NAMES)))        # in any text, and any part of a name: DocWriters
 
 #: What the dashboard's code may still say that names an app, and why it is not about one: (file, words of the line

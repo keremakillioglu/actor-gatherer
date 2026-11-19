@@ -1,13 +1,13 @@
-// The project's preview, beside the Editor's file (ed.pv): its state, its form, the question about an agent's command,
-// and the result or the output of its latest run -- the Preview app's panel before the Editor took it in, as it was.
+// The project's preview, beside the LaTeX editor's file (ed.pv): its state, its form, the question about an agent's command,
+// and the result or the output of its latest run -- the Preview app's panel before the LaTeX editor took it in, as it was.
 // Its backend's tools for what changes (preview_set, _run, _stop), its own routes for what is read (preview/about,
-// preview/files/, preview/synctex), its messages for each run as it goes; the Editor runs it (pvRun: Execute, ⌘↵) and
+// preview/files/, preview/synctex), its messages for each run as it goes; the LaTeX editor runs it (pvRun: Execute, ⌘↵) and
 // asks for a source's place in the PDF (pvLocate: "→ PDF"), and opens what it sends back (a place in the PDF's source:
 // edShowFile). Hidden until it is first run, or opened by its button; its × hides it again. A LaTeX build's errors,
 // warnings and bad boxes (its log's, read by the backend: runs.problems) are listed under Problems, each opening its
-// file at its line, and marked on those lines in the Editor (edProblems).
+// file at its line, and marked on those lines in the LaTeX editor (edProblems).
 let pvApi = null;
-// What this Editor's preview showed, kept in this browser (as its file is: edKeepFile), so that, its panel drawn again
+// What this LaTeX editor's preview showed, kept in this browser (as its file is: edKeepFile), so that, its panel drawn again
 // (its task left and come back to, the page reloaded), it opens as it was left: shown or not; for the run it showed,
 // the tab picked and where its output and its result were scrolled; and, for the PDF it showed, its place (page, zoom,
 // where on it) -- pdf.js keeps one itself only for the very same build, not for one made meanwhile.
@@ -17,7 +17,7 @@ function pvKept() {
   try { const v = JSON.parse(localStorage.getItem(pvKey()) || "null"); return v && typeof v === "object" ? v : {}; }
   catch (e) { return {}; }
 }
-let pvRec = null, pvDirty = false, pvKeepT = null;   // this Editor's record, as this page keeps it
+let pvRec = null, pvDirty = false, pvKeepT = null;   // this LaTeX editor's record, as this page keeps it
 function pvKeep(change) {
   const rec = pvRec || (pvRec = pvKept());
   if (change.run && change.run !== rec.run) { delete rec.picked; delete rec.out; delete rec.result; delete rec.probs; }   // another run's
@@ -36,7 +36,7 @@ window.addEventListener("pagehide", pvFlush);       // what moved last, as the p
 function pvShow(on) {
   if (!ed.pv) return;
   ed.pv.hidden = !on;
-  try { localStorage.setItem("ag-editor-preview-shown", on ? "1" : ""); } catch (e) { /* this page only */ }   // a new Editor's
+  try { localStorage.setItem("ag-editor-preview-shown", on ? "1" : ""); } catch (e) { /* this page only */ }   // a new LaTeX editor's
   pvKeep({ shown: !!on }); pvFlush();
   if (on && pvApi) pvApi.shown();                    // what it is, for the file open (or the folder shown), once
 }
@@ -53,9 +53,9 @@ function pvMount(box) {
       el("button", { type: "button", class: "pv-busy", hidden: "",
         title: "Rebuilding · click to see the output" }))));
   pvApi = pvMake(agApp, box.firstChild);
-  let shown = pvKept().shown;                        // this Editor's, else as the last one was left
+  let shown = pvKept().shown;                        // this LaTeX editor's, else as the last one was left
   if (typeof shown !== "boolean") try { shown = localStorage.getItem("ag-editor-preview-shown") === "1"; } catch (e) { shown = false; }
-  if (shown) queueMicrotask(() => pvShow(true));     // (once the Editor has its folder: edMount)
+  if (shown) queueMicrotask(() => pvShow(true));     // (once the LaTeX editor has its folder: edMount)
 }
 function pvMake(ag, root) {
   const OUT_MAX = 300000;                               // the most characters of a run's output kept here
@@ -141,7 +141,7 @@ function pvMake(ag, root) {
     }
   });
 
-  // ---- what the Editor asks: run it (Execute), and show a source's place in the PDF ("→ PDF")
+  // ---- what the LaTeX editor asks: run it (Execute), and show a source's place in the PDF ("→ PDF")
   async function runFor(d) {
     if (d && d.path) { pv.path = d.path; pv.file = d.file || d.path; }
     await load();
@@ -391,8 +391,8 @@ function pvMake(ag, root) {
   }
 
   // ---- a LaTeX build's problems: its errors, then its warnings, then its bad boxes (folded into one row), each opening
-  // its file at its line in the Editor; its log's lines for it shown under it (▸). Those of the latest build that has
-  // ended: a build running, the last one's, dimmed. Marked on their lines in the Editor too (edProblems).
+  // its file at its line in the LaTeX editor; its log's lines for it shown under it (▸). Those of the latest build that has
+  // ended: a build running, the last one's, dimmed. Marked on their lines in the LaTeX editor too (edProblems).
   function problems(p) {
     const was = pv.probs;
     pv.probs = p || null;
@@ -515,8 +515,8 @@ function pvMake(ag, root) {
     } catch (e) { /* an older viewer */ }
   });
 
-  // ---- SyncTeX: a double-click in the PDF opens its source at that line, in the Editor (edShowFile); `locate`
-  // (the Editor's "→ PDF") shows a source's line in the PDF, marked a moment.
+  // ---- SyncTeX: a double-click in the PDF opens its source at that line, in the LaTeX editor (edShowFile); `locate`
+  // (the LaTeX editor's "→ PDF") shows a source's line in the PDF, marked a moment.
   async function sync(askFor) {
     const s = pv.run && pv.run.shows;
     if (!s || !s.rel) return null;

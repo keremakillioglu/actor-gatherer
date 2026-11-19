@@ -805,7 +805,7 @@ class ServerTest(unittest.TestCase):
         self.addCleanup(self.httpd.server_close)
         self.addCleanup(self.httpd.shutdown)
         self.url = f"http://127.0.0.1:{self.httpd.server_port}"
-        self.app = f"editor.localhost:{self.httpd.server_port}"
+        self.app = f"latex.localhost:{self.httpd.server_port}"
 
     def get(self, path: str):
         """A GET of the Editor app's, on its origin: the response."""
@@ -912,7 +912,7 @@ class ServerTest(unittest.TestCase):
         self.assertFalse(os.path.exists(os.path.join(self.root, "c.py")))
 
     def test_the_editor_is_served_on_the_app_s_origin_not_the_dashboard_s(self):
-        with self.get("/vendor/editor.js") as resp:
+        with self.get("/_ag/lib/fileedit/vendor/editor.js") as resp:          # app_kit.fileedit's, the host's library
             self.assertIn(b"agEditor", resp.read())
         with self.assertRaises(urllib.error.HTTPError) as no:
             urllib.request.urlopen(f"{self.url}/vendor/editor.js", timeout=10)

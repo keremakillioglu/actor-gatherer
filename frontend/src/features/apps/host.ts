@@ -177,12 +177,18 @@ export const start = (app: string, gatherer: string, cwd: string, harness: strin
 /** The app that takes an intent of `kind` (for open-file: a file of that media type): one that names the type first,
  * else one that takes any -- the first found of each. */
 export function handler(kind: string, mediaType?: string): AppInfo | undefined {
+  return handlers(kind, mediaType)[0];
+}
+
+/** Every app that takes an intent of `kind`, in the order they are asked: those that name the type first, then those
+ * that take any. */
+export function handlers(kind: string, mediaType?: string): AppInfo[] {
   const names = (t: string) =>
     mediaType !== undefined && (t === mediaType || (t.endsWith("/*") && mediaType.startsWith(t.slice(0, -1))));
-  return (
-    listed.apps.find((a) => a.handles.some((h) => h.intent === kind && h.types.some(names))) ||
-    listed.apps.find((a) => a.handles.some((h) => h.intent === kind && !h.types.length))
-  );
+  return [
+    ...listed.apps.filter((a) => a.handles.some((h) => h.intent === kind && h.types.some(names))),
+    ...listed.apps.filter((a) => a.handles.some((h) => h.intent === kind && !h.types.length)),
+  ];
 }
 
 export function theme(): { mode: string; vars: Record<string, string> } {

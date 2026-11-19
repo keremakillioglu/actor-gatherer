@@ -1,4 +1,4 @@
-// The Editor app's lines selected, sent to an actor (ag_apps/editor/panel/editor-send.js): a button beside the
+// The Files app's lines selected, sent to an actor (app_kit/fileedit/panel/editor-send.js): a button beside the
 // selection, a picker of the gatherer's actors under a box for what to do, and the one picked sent the user's words with
 // where the lines are and the lines themselves, as the user's message. What reaches the actor is the page's /api/send,
 // held here: the test home's actors have no terminal to type into.
