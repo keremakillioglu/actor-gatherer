@@ -16,7 +16,7 @@
   display: flex;
   min-width: 0;
   min-height: 0;
-  font-size: 13px;
+  font-size: var(--fs-ui);
   line-height: 1.45;
 }
 .ap-main {
@@ -34,7 +34,7 @@
 .ap-head h1 {
   margin: 0 4px 0 0;
   font-size: 20px;
-  font-weight: 650;
+  font-weight: 600;
 }
 .ap-search {
   flex: 1 1 200px;
@@ -47,19 +47,19 @@
   background: var(--page);
   color: var(--ink);
   font: inherit;
-  font-size: 12.5px;
+  font-size: var(--fs-ui);
 }
 .ap-lede {
   margin: 4px 0 0;
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: var(--fs-ui);
 }
 .ap-note,
 .ap-error {
   margin-top: 10px;
   padding: 7px 11px;
   border-radius: 8px;
-  font-size: 12.5px;
+  font-size: var(--fs-ui);
 }
 .ap-note {
   background: color-mix(in srgb, var(--s3) 10%, transparent);
@@ -83,7 +83,7 @@
   background: var(--page);
   color: var(--ink);
   font: inherit;
-  font-size: 12.5px;
+  font-size: var(--fs-ui);
   white-space: nowrap;
   cursor: pointer;
 }
@@ -126,7 +126,7 @@
   gap: 4px 8px;
   margin: 18px 0 6px;
   color: var(--ink-2);
-  font-size: 12px;
+  font-size: var(--fs-meta);
   font-weight: 600;
 }
 .ap-sec .n {
@@ -188,7 +188,7 @@
   place-items: center;
   background: var(--mark);
   color: #fff;
-  font-weight: 700;
+  font-weight: 600;
 }
 .ap-mark.bad {
   width: 30px;
@@ -197,7 +197,7 @@
   place-items: center;
   background: var(--critical);
   color: #fff;
-  font-weight: 700;
+  font-weight: 600;
 }
 .ap-txt {
   flex: 1;
@@ -229,7 +229,7 @@
   gap: 0 10px;
   margin-top: 1px;
   color: var(--muted);
-  font-size: 11.5px;
+  font-size: var(--fs-meta);
   font-variant-numeric: tabular-nums;
 }
 .ap-big {
@@ -240,7 +240,7 @@
   border: 1px solid var(--ring);
   border-radius: 999px;
   color: var(--muted);
-  font-size: 10.5px;
+  font-size: var(--fs-label);
   line-height: 16px;
   white-space: nowrap;
 }
@@ -268,7 +268,7 @@
   border-radius: 6px;
   background: none;
   color: var(--muted);
-  font-size: 16px;
+  font-size: var(--fs-head);
   line-height: 1;
   cursor: pointer;
 }
@@ -336,23 +336,25 @@
 }
 .ap-dtop h2 {
   margin: 0;
-  font-size: 16px;
+  font-size: var(--fs-head);
 }
 .ap-sub {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-meta);
   overflow-wrap: anywhere;
 }
 .ap-close {
   margin-left: auto;
   align-self: flex-start;
-  padding: 2px 6px;
+  width: var(--ib);
+  height: var(--ib);
+  display: grid;
+  place-items: center;
+  padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: 7px;
   background: none;
   color: var(--muted);
-  font-size: 18px;
-  line-height: 1;
   cursor: pointer;
 }
 .ap-close:hover {
@@ -366,7 +368,7 @@
 .ap-side h3 {
   margin: 18px 0 6px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-label);
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -444,17 +446,17 @@
   background: var(--surface);
   color: var(--ink);
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
-  font-size: 13px;
+  font-size: var(--fs-ui);
   line-height: 1.45;
 }
 .ap-dlg h2 {
   margin: 0;
-  font-size: 17px;
+  font-size: var(--fs-head);
 }
 .ap-dlg h3 {
   margin: 14px 0 5px;
   color: var(--ink-2);
-  font-size: 12px;
+  font-size: var(--fs-meta);
 }
 .ap-dlg p {
   margin: 8px 0;
@@ -487,7 +489,7 @@
   border: 1px solid color-mix(in srgb, var(--warning) 35%, transparent);
   border-radius: 9px;
   background: color-mix(in srgb, var(--warning) 10%, transparent);
-  font-size: 12.5px;
+  font-size: var(--fs-ui);
 }
 .ap-derr {
   margin-top: 12px;
@@ -495,7 +497,7 @@
   border: 1px solid color-mix(in srgb, var(--critical) 35%, transparent);
   border-radius: 9px;
   background: color-mix(in srgb, var(--critical) 8%, transparent);
-  font-size: 12.5px;
+  font-size: var(--fs-ui);
   overflow-wrap: anywhere;
 }
 .ap-busy {

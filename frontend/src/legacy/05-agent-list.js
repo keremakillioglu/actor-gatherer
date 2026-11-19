@@ -486,12 +486,11 @@ function gathererBox(g) {
       // rename, and hide (a folder's: delete)
       el("span", { class: "fill", onclick: () => toggleGatherer(g.name) }, ...gathererCounts(g),
         el("span", { class: "g-acts", onclick: (ev) => ev.stopPropagation() }, ...(SNAPSHOT ? [] : startButtons(g)),
-          SNAPSHOT ? null : el("button", { class: "act newfolder", type: "button", title: `New folder in ${titleOf(g)}`,
-            "aria-label": `New folder in ${titleOf(g)}`, onclick: () => startFolderEdit(g.name, null, null) }, strokeIcon(ICONS.folderNew, 14)),
-          SNAPSHOT ? null : el("button", { class: "act rename", type: "button", title: `Rename ${titleOf(g)}`, "aria-label": `Rename ${titleOf(g)}`,
-            onclick: () => retitle(g) }, strokeIcon("M10.6 2.6l2.8 2.8-7.9 7.9-3.4.6.6-3.4zM9.1 4.1l2.8 2.8", 14)),
-          el("button", { class: "act hide", type: "button", title: `Hide ${g.name}`, "aria-label": `Hide ${g.name}`, onclick: () => setHidden(g, true) },
-            hideIcon())))), g), g, null, () => { if (collapsed.has(g.name)) toggleGatherer(g.name); }));
+          rowMore(`gmore:${g.name}`, titleOf(g), [
+            ...(SNAPSHOT ? [] : [{ icon: ICONS.folderNew, text: "New folder", run: () => startFolderEdit(g.name, null, null) },
+              { icon: ICONS.pencil, text: "Rename", run: () => retitle(g) }]),
+            { mark: hideIcon(), text: "Hide", run: () => setHidden(g, true) }])))), g), g, null,
+    () => { if (collapsed.has(g.name)) toggleGatherer(g.name); }));
   if (state.adding && state.adding.gatherer === g.name) box.append(newForm());
   if (g.error) box.append(el("div", { class: "servers", text: `Database unreadable: ${g.error}` }));
   // open: what is in it -- its gatherer agent, then its box's rows -- set in under its row, as a folder's are (g-kids)
@@ -695,9 +694,11 @@ const appsNotified = (g, inside = undefined) => gathererApps(g.name).filter((o) 
 }).length;
 const actorTitle = (a) => (a.name && a.name.text) || (a.last_user_message ? firstLine(a.last_user_message, 120) : "No message yet");
 // an app as said: the user's name for it, else its kind and what it shows; in its row and card, its name, else what it
-// shows, else its kind (its face says the kind)
-const appTitle = (o) => o.name || (o.title ? `${o.app.label} · ${o.title}` : o.app.label);
-const appShown = (o) => o.name || o.title || o.app.label;
+// shows, else its kind (its face says the kind). What it shows is no name when it is only its group's (a group's Notes
+// shows the group's notebook): "Notes", not "demo" under the group "demo".
+const appSays = (o) => o.title && o.title !== o.group ? o.title : "";
+const appTitle = (o) => o.name || (appSays(o) ? `${o.app.label} · ${appSays(o)}` : o.app.label);
+const appShown = (o) => o.name || appSays(o) || o.app.label;
 // its items: its actors' channels, then its apps' (those open)
 const taskItems = (g, id) => [...taskMembers(g, id).map((a) => a.channel), ...taskApps(g, id).map((o) => appItem(o.id))];
 // its name: the reader's, else its lead actor's, else its first app's
@@ -754,12 +755,15 @@ function readApps(gname, now = false) {
 }
 // an open instance as the list has it -- {app (its manifest), id, title, name (the user's), folder, inst} -- null: of an
 // app not found here
-function appOf(i) {
+function appOf(i, gname) {
   const app = window.agNext && window.agNext.apps.named(i.app);
-  return app ? { app, id: i.id, title: i.title || "", name: i.name || "", folder: i.folder || null, inst: i } : null;
+  return app ? { app, id: i.id, title: i.title || "", name: i.name || "", folder: i.folder || null, group: gname, inst: i } : null;
 }
-const gathererApps = (gname) => PANE || SNAPSHOT ? [] : ((appsKnown.get(gname) || {}).instances || []).map(appOf).filter(Boolean);
+const gathererApps = (gname) => PANE || SNAPSHOT ? [] : ((appsKnown.get(gname) || {}).instances || []).map((i) => appOf(i, gname)).filter(Boolean);
 const appInfo = (gname, id) => gathererApps(gname).find((o) => o.id === id) || null;
+// an app every agent of its group may use (its manifest's access "group": task_links.py's `taskable`): in no task, ever
+const groupApp = (app) => !!app && app.access === "group";
+const isGroupItem = (g, k) => isAppItem(k) && groupApp((appInfo(g.name, k.slice(APP_ITEM.length)) || {}).app);
 // a task's apps, as they were opened
 const taskApps = (g, id) => gathererApps(g.name).filter((o) => appTaskOf(g.name, o.id) === id);
 // an app's mark: small, beside a task's faces
@@ -771,13 +775,20 @@ const appFace = (o) => el("span", { class: "logo app-face", title: appTitle(o) }
   ? el("img", { src: `/apps/mark/${encodeURIComponent(o.app.name)}.svg`, alt: "", draggable: "false" }) : strokeIcon(ICONS.app, 16));
 // several apps' marks, stacked over one another as faces are (`most` at most); none: nothing
 const appStack = (list, most = 3) => list.length ? el("span", { class: "t-apps" }, ...list.slice(0, most).map(appMarkOf)) : null;
-// Where a row's task is OPEN (07-panes.js's screen tabs): its tab's number -- filled, the tab shown; ringed, another.
-// None, open nowhere: a click opens it in a tab of its own, and it can be dragged onto the work area.
+// Where a row's task is OPEN (07-panes.js's screen tabs): its tab's number, for a screen reader only (04-list.css) -- a
+// boxed number by a face read as an unread count, and the row's bar already says it is open; the hover card says which
+// tab (tabLine). None, open nowhere: a click opens it in a tab of its own, and it can be dragged onto the work area.
+const tabAt = (k) => k && workPlacer && !SNAPSHOT ? workPlacer.tabs.where(k) : null;
 function tabMark(k) {
-  const at = k && workPlacer && !SNAPSHOT ? workPlacer.tabs.where(k) : null;
+  const at = tabAt(k);
   if (!at) return null;
   const said = at.here ? `Open here in tab ${at.n}` : `Open in tab ${at.n} · click to switch to it`;
-  return el("span", { class: "tab-no" + (at.here ? " here" : ""), title: said, "aria-label": said }, String(at.n));
+  return el("span", { class: "tab-no" + (at.here ? " here" : ""), "aria-label": said }, String(at.n));
+}
+// the same, said in its hover card
+function tabLine(k) {
+  const at = tabAt(k);
+  return at ? el("div", { class: "c-tab", text: at.here ? `Open here, in tab ${at.n}` : `Open in tab ${at.n}` }) : null;
 }
 // an actor's face alone, no harness's badge (actorLogo's): its avatar, else its harness's mark
 function plainFace(a) {
@@ -981,9 +992,9 @@ async function openTask(gname, id, focus = null, ev = null) {
 // item's task -- a new agent on a harness picked (addToTask), or an app (addAppToTask) -- from its menu
 function addButton(g, k, label = null) {
   const a = isAppItem(k) ? null : actorOf(g, k), o = a ? null : appInfo(g.name, k.slice(APP_ITEM.length));
-  if ((!a && !o) || (a && isCoordinator(a))) return null;
+  if ((!a && !o) || (a && isCoordinator(a)) || (o && groupApp(o.app))) return null;
   const hs = SNAPSHOT ? [] : startable();
-  const apps = SNAPSHOT || PANE || !window.agNext ? [] : window.agNext.apps.found();
+  const apps = SNAPSHOT || PANE || !window.agNext ? [] : window.agNext.apps.found().filter((app) => !groupApp(app) && !app.failed);
   if (!hs.length && !apps.length) return null;
   // its menu's key: its own, apart from the list's "+" for the same item, which the menu would hang from otherwise
   const mk = `${label ? "card-" : ""}task-add:${g.name}/${k}`, id = itemTaskOf(g, k);
@@ -1306,7 +1317,7 @@ function foldRows(g, id, name, list) {
       : name === "Saved" ? `${shown ? "Hide" : "Show"} the saved actors that are closed`
       : `${shown ? "Hide" : "Show"} the closed ${kids.length ? "folders and actors" : "actors"}`,
     onclick: () => toggleFold(name, k) },
-    `${shown ? "▾" : "▸"} `,
+    foldMark(shown), " ",
     shells ? plural(list.length, "terminal") : name === "Closed" ? closedSays(g, id, list.length) : `${list.length} ${name.toLowerCase()}`);
   if (shells) return [line, ...(shown ? list.map((s) => shellRow(g, s)) : [])];
   if (shown) return [line, ...kids.flatMap((f) => folderRows(g, f)), ...list.flatMap((a) => rowsOf(g, a, name))];
@@ -1344,10 +1355,10 @@ function folderLine(g, f) {
     folderAct("delete", `Delete ${f.name} · its contents move up a level`, strokeIcon(ICONS.bin, 14), () => deleteFolder(g.name, f.id)),
     folderAct("reopen", `Reopen ${f.name} · its actors stay closed`, strokeIcon(ICONS.folderOpen, 14), () => reopenFolder(g.name, f.id)),
   ] : [...startButtons(g, f), crewAt(`folder:${f.id}`, g)[1] ? null : crewButton(g, `folder:${f.id}`),
-    folderAct("new", `New folder in ${f.name}`, strokeIcon(ICONS.folderNew, 14), () => startFolderEdit(g.name, null, f.id)),
-    folderAct("rename", `Rename ${f.name} (F2)`, strokeIcon(ICONS.pencil, 13), () => startFolderEdit(g.name, f.id)),
-    folderAct("delete", `Delete ${f.name} · its contents move up a level${crewAt(`folder:${f.id}`, g)[1] ? " and its coordinator agent closes" : ""}`,
-      strokeIcon(ICONS.bin, 14), () => deleteFolder(g.name, f.id)),
+    rowMore(`fmore:${g.name}:${f.id}`, f.name, [
+      { icon: ICONS.folderNew, text: "New folder", run: () => startFolderEdit(g.name, null, f.id) },
+      { icon: ICONS.pencil, text: "Rename", run: () => startFolderEdit(g.name, f.id) },
+      { icon: ICONS.bin, text: crewAt(`folder:${f.id}`, g)[1] ? "Delete (its coordinator agent closes)" : "Delete", run: () => deleteFolder(g.name, f.id) }]),
     folderAct("close", `Close ${f.name} and every actor in it`, closeIcon(), () => pressClose(g, f, "list"))];
   const line = el("div", { class: "folder-line" + (closed ? " closed" : ""), "data-key": `${g.name}/folder:${f.id}`, "data-card": key(g.name, `folder:${f.id}`) },
     el("button", { class: "fbtn", type: "button", "aria-expanded": open ? "true" : "false",
@@ -1559,10 +1570,11 @@ function fileItems(gname, items, id) {
   });
 }
 // Whether what is dragged may be put in item `k`'s task (dropped on its row): of its gatherer, items -- not `k` itself,
-// and one of them at least not in its task yet
+// and one of them at least not in its task yet; neither `k` nor any of them an app every agent of the group may use
 function canJoin(g, k) {
   const d = listDrag;
   if (!d || d.g !== g.name || !d.cs || d.cs.includes(k)) return false;
+  if (isGroupItem(g, k) || d.cs.some((c) => isGroupItem(g, c))) return false;   // a group's app: in no task
   const t = itemTaskOf(g, k);
   return d.cs.some((c) => t === null || itemTaskOf(g, c) !== t);
 }

@@ -178,6 +178,8 @@ def task(srv: Parts, body: Body) -> Response:
         new = [str(c) for c in items]
         if any(task_links.coordinator(c) for c in [str(body.get("to") or ""), *new]):
             raise ValueError("the coordinator agent can't be in a task")
+        if task_links.untaskable(g, [str(body.get("to") or ""), *new]):
+            raise ValueError("an app every agent of the group can use isn't put in a task")
         tid, attached = task_links.change(g, lambda: tasks.add(g, str(body.get("to") or ""), new, body.get("name")))
         got = {"task": tid, "attached": attached}
     elif do == "out":

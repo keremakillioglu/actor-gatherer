@@ -11,7 +11,7 @@
 .pane-who .shell-logo { width: 20px; height: 20px; border-radius: 5px; margin: 0; flex: none; }
 .pane-who .shell-logo svg { width: 14px; height: 14px; }
 /* a start button: "+" and its harness's mark, the tooltip the button's (not the mark's own) */
-.gatherer-row .act.start { gap: 1px; padding: 0 4px; font-size: 14px; }
+.gatherer-row .act.start { gap: 1px; padding: 0 4px; font-size: var(--fs-body); }
 .gatherer-row .act.start + .act.start { margin-left: 2px; }
 .gatherer-row .act.start .badge { width: 16px; height: 16px; display: block; pointer-events: none; }
 .gatherer-row .act.start.busy { opacity: 1; }
@@ -34,73 +34,76 @@
 :is(.gatherer-row, .folder-line, .aside-head) .act.start.crew:hover .crew-face { filter: none; opacity: 1; }
 :is(.gatherer-row, .folder-line, .aside-head) .act.start.crew.busy .crew-face { animation: term-blink 1s ease-in-out infinite; }
 .newform { margin: 4px 16px 12px; padding: 10px 12px; border: 1px solid var(--ring); border-radius: 8px; background: var(--page); display: grid; gap: 8px; }
-.newform label { display: grid; gap: 3px; font-size: 12px; color: var(--ink-2); }
-.newform input, .newform select, .composer textarea { font: inherit; font-size: 13px; color: var(--ink); background: var(--surface);
+.newform label { display: grid; gap: 3px; font-size: var(--fs-meta); color: var(--ink-2); }
+.newform input, .newform select, .composer textarea { font: inherit; font-size: var(--fs-ui); color: var(--ink); background: var(--surface);
   border: 1px solid var(--ring); border-radius: 6px; padding: 5px 8px; min-width: 0; }
 .newform .row { display: flex; gap: 8px; justify-content: flex-end; }
 .newform .row:has(button[value]) { gap: 6px; flex-wrap: wrap; }
 .newform .row button[value] { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; padding: 4px 8px; }
 .newform .row .badge { width: 14px; height: 14px; display: block; }
-.newform .err, .composer .err { color: var(--critical); font-size: 12px; }
+.newform .err, .composer .err { color: var(--critical); font-size: var(--fs-meta); }
 /* a new actor on a branch of its own: the gatherer's projects, which one, and whether each change is asked about */
-.newform .desc { font-size: 12px; color: var(--muted); line-height: 1.45; }
+.newform .desc { font-size: var(--fs-meta); color: var(--muted); line-height: 1.45; }
 .newform .projects { display: grid; gap: 4px; }
-.newform .proj { display: flex; align-items: center; gap: 6px; font-size: 12.5px; min-width: 0; }
+.newform .proj { display: flex; align-items: center; gap: 6px; font-size: var(--fs-ui); min-width: 0; }
 .newform .proj .nm { font-weight: 600; white-space: nowrap; }
-.newform .proj .at { color: var(--muted); font: 11.5px var(--mono, ui-monospace, monospace); min-width: 0; overflow: hidden;
+.newform .proj .at { color: var(--muted); font: var(--fs-meta) var(--mono, ui-monospace, monospace); min-width: 0; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap; flex: 1; }
-.newform .proj button { flex: none; font-size: 11.5px; padding: 1px 8px; }
-.newform button.suggest { display: flex; align-items: center; gap: 6px; text-align: left; width: 100%; font-size: 12.5px; padding: 4px 8px; }
-.newform button.suggest .at { color: var(--muted); font: 11.5px ui-monospace, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.newform .proj button { flex: none; font-size: var(--fs-meta); padding: 1px 8px; }
+.newform button.suggest { display: flex; align-items: center; gap: 6px; text-align: left; width: 100%; font-size: var(--fs-ui); padding: 4px 8px; }
+.newform button.suggest .at { color: var(--muted); font: var(--fs-meta) ui-monospace, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .newform .addrow { display: flex; gap: 6px; } .newform .addrow input { flex: 1; }
 .newform label.check { display: flex; align-items: flex-start; gap: 7px; color: var(--ink-2); line-height: 1.4; }
 .newform label.check input { margin: 2px 0 0; padding: 0; width: 14px; height: 14px; flex: none; }
-.newform .desc.route code { font: 11.5px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink-2); }
-.newform .link { border: 0; background: none; padding: 0; color: var(--s1); font: inherit; font-size: 12px; cursor: pointer; justify-self: start; }
+.newform .desc.route code { font: var(--fs-meta) ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink-2); }
+.newform .link { border: 0; background: none; padding: 0; color: var(--s1); font: inherit; font-size: var(--fs-meta); cursor: pointer; justify-self: start; }
 /* the branch button's drop-down: the gatherer's sources, and adding one; and, in its style, a gatherer row's other
    drop-downs (popMenu), each item's mark beside it -- over a hover card (.actor-card, 70), whose buttons open them too */
-.br-menu { position: fixed; z-index: 72; min-width: 250px; max-width: min(380px, calc(100vw - 16px)); padding: 5px; display: grid; gap: 1px;
-  background: var(--surface); border: 1px solid var(--ring); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.25); font-size: 12.5px; }
-.br-menu .hd { color: var(--muted); font-size: 11px; padding: 3px 8px 4px; }
+/* one column, the menu's own width: a long path (its heading's, a note's) cut short in it, never widening it past its edge */
+.br-menu { position: fixed; z-index: 72; min-width: 250px; max-width: min(380px, calc(100vw - 16px)); padding: 5px; display: grid;
+  grid-template-columns: minmax(0, 1fr); gap: 1px;
+  background: var(--surface); border: 1px solid var(--ring); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.25); font-size: var(--fs-ui); }
+.br-menu .hd { min-width: 0; color: var(--muted); font-size: var(--fs-label); padding: 3px 8px 4px; }
+.br-menu .hd .sub { display: block; font-family: var(--mono, ui-monospace, monospace); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .br-menu button { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1px 10px; text-align: left; border: 0; background: none;
   padding: 5px 8px; border-radius: 5px; color: var(--ink); font: inherit; cursor: pointer; }
 .br-menu button:hover, .br-menu button:focus-visible { background: var(--wash); outline: none; }
 .br-menu button .nm { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.br-menu button .on { color: var(--muted); font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
-.br-menu button .at { grid-column: 1 / -1; color: var(--muted); font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+.br-menu button .on { color: var(--muted); font: var(--fs-label) ui-monospace, SFMono-Regular, Menlo, monospace; }
+.br-menu button .at { grid-column: 1 / -1; color: var(--muted); font: var(--fs-label) ui-monospace, SFMono-Regular, Menlo, monospace;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .br-menu button.add { display: block; color: var(--s1); }
 .br-menu .sep { height: 1px; background: var(--grid); margin: 3px 2px; }
 .row-menu button { grid-template-columns: 16px minmax(0, 1fr); align-items: center; }
 .row-menu button > :is(svg, .badge) { width: 16px; height: 16px; display: block; color: var(--muted); }
-.row-menu button .at { grid-column: 2; font-family: inherit; font-size: 11.5px; line-height: 1.35; white-space: normal; }
+.row-menu button .at { grid-column: 2; font-family: inherit; font-size: var(--fs-meta); line-height: 1.35; white-space: normal; }
 /* the popup a new actor on a branch starts from */
 dialog.br-dialog { width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 64px); padding: 0; border: 1px solid var(--ring);
   border-radius: 10px; background: var(--page); color: var(--ink); box-shadow: 0 20px 60px rgba(0,0,0,.35); }
 dialog.br-dialog::backdrop { background: rgba(0,0,0,.35); }
 .br-dialog .newform { margin: 0; border: 0; border-radius: 0; padding: 14px 18px 16px; gap: 10px; background: none; }
 .br-dialog .br-title { display: flex; align-items: center; gap: 8px; }
-.br-dialog h3 { margin: 0; font-size: 15px; display: flex; align-items: center; gap: 7px; flex: 1; }
+.br-dialog h3 { margin: 0; font-size: var(--fs-body); display: flex; align-items: center; gap: 7px; flex: 1; }
 .br-dialog .x { border: 0; background: none; font-size: 18px; line-height: 1; padding: 2px 6px; color: var(--muted); cursor: pointer; }
 .br-dialog .x:hover { color: var(--ink); background: var(--wash); }
-.br-dialog .lbl { font-size: 11.5px; font-weight: 600; color: var(--ink-2); text-transform: uppercase; letter-spacing: .03em; }
-.br-dialog .projects .lbl { text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--muted); }
+.br-dialog .lbl { font-size: var(--fs-meta); font-weight: 600; color: var(--ink-2); text-transform: uppercase; letter-spacing: .03em; }
+.br-dialog .projects .lbl { text-transform: none; letter-spacing: 0; font-weight: 600; color: var(--muted); }
 .br-dialog .br-src { border: 1px solid var(--ring); border-radius: 8px; padding: 8px 10px; display: grid; gap: 4px; background: var(--surface); }
 .br-dialog .br-src .top { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .br-dialog .br-src .nm { font-weight: 600; white-space: nowrap; }
-.br-dialog .br-src .at, .br-dialog .br-row .at { color: var(--muted); font: 11.5px ui-monospace, SFMono-Regular, Menlo, monospace;
+.br-dialog .br-src .at, .br-dialog .br-row .at { color: var(--muted); font: var(--fs-meta) ui-monospace, SFMono-Regular, Menlo, monospace;
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
 .br-dialog .br-row { display: flex; align-items: center; gap: 4px; border: 1px solid var(--ring); border-radius: 6px; }
 .br-dialog .br-row.on { border-color: var(--s1); }
 .br-dialog .br-row .use { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; border: 0; background: none; padding: 5px 8px;
-  text-align: left; font: inherit; font-size: 12.5px; color: var(--ink); cursor: pointer; border-radius: 6px; }
+  text-align: left; font: inherit; font-size: var(--fs-ui); color: var(--ink); cursor: pointer; border-radius: 6px; }
 .br-dialog .br-row .use:hover { background: var(--wash); }
 .br-dialog .br-row .nm { font-weight: 600; white-space: nowrap; }
-.br-dialog .br-row .on { color: var(--muted); font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.br-dialog .br-row .on { color: var(--muted); font: var(--fs-label) ui-monospace, SFMono-Regular, Menlo, monospace; }
 .br-dialog .br-row .rm { border: 0; background: none; color: var(--muted); font-size: 15px; padding: 2px 8px; cursor: pointer; border-radius: 5px; }
 .br-dialog .br-row .rm:hover { color: var(--critical); background: var(--wash); }
 /* an actor on a branch of its own, in the list: its branch, and what of it waits for the reader */
-.agent .branchline { display: flex; align-items: center; gap: 4px; margin-top: 2px; font-size: 11px; color: var(--muted); min-width: 0; }
+.agent .branchline { display: flex; align-items: center; gap: 4px; margin-top: 2px; font-size: var(--fs-label); color: var(--muted); min-width: 0; }
 .agent .branchline svg { flex: none; }
 .agent .branchline .rt { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; min-width: 0; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap; }
@@ -140,7 +143,7 @@ button:disabled { opacity: .5; cursor: default; }
 .folder-line { position: relative; display: flex; align-items: center; margin: 1px 8px; border-radius: 8px; min-height: 30px; }
 .folder-line:hover { background: var(--wash); }
 .folder-line .fbtn { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; border: 0; background: none; color: var(--ink-2);
-  font: inherit; font-size: 13px; font-weight: 600; padding: 5px 4px 5px 4px; text-align: left; cursor: pointer; border-radius: 8px; }
+  font: inherit; font-size: var(--fs-ui); font-weight: 600; padding: 5px 4px 5px 4px; text-align: left; cursor: pointer; border-radius: 8px; }
 .folder-line:hover .fbtn { color: var(--ink); }
 .folder-line .fbtn:focus-visible { outline: 2px solid var(--axis); outline-offset: -2px; }
 .folder-line .caret { width: 10px; flex: none; color: var(--muted); font-size: 9px; text-align: center; transition: transform .15s; }
@@ -148,7 +151,7 @@ button:disabled { opacity: .5; cursor: default; }
 .folder-line .fname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .folder-line .fill { position: relative; flex: none; display: flex; align-items: center; justify-content: flex-end; gap: 4px;
   min-height: 26px; padding: 0 6px 0 2px; cursor: pointer; }
-.folder-line .count { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--ink-2); background: var(--wash);
+.folder-line .count { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-label); color: var(--ink-2); background: var(--wash);
   border-radius: 999px; padding: 1px 7px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .folder-line .count i { width: 6px; height: 6px; border-radius: 50%; background: var(--good); display: inline-block; }
 .folder-line .count.asking i { background: var(--warning); }
@@ -161,7 +164,8 @@ button:disabled { opacity: .5; cursor: default; }
 .folder-line .act { border: 0; border-radius: 6px; background: none; color: var(--muted); padding: 0 4px; height: 22px; line-height: 1;
   display: inline-flex; align-items: center; cursor: pointer; flex: none; }
 .folder-line .act:hover, .folder-line .act:focus-visible, .folder-line .act[aria-expanded="true"] { color: var(--ink); background: var(--wash); }
-.folder-line .act.start { gap: 1px; font-size: 14px; }
+.folder-line .f-acts .act { width: var(--ib); height: var(--ib); padding: 0; justify-content: center; border-radius: 7px; }   /* as a group's */
+.folder-line .act.start { gap: 1px; font-size: var(--fs-body); }
 .folder-line .act.start svg { display: block; pointer-events: none; }
 .folder-line .act.start.busy svg { animation: term-blink 1s ease-in-out infinite; }
 .folder-line .act.start:disabled { cursor: default; opacity: .45; }
@@ -174,20 +178,20 @@ button:disabled { opacity: .5; cursor: default; }
 .folder-line .count.closed i { background: none; box-shadow: inset 0 0 0 1.5px var(--axis); }
 /* the question a folder's x asks first (closeAsk): under its line, or in its card */
 .f-ask { margin: 2px 8px 6px 24px; padding: 8px 10px; border: 1px solid var(--ring); border-radius: 8px; background: var(--surface);
-  font-size: 12px; line-height: 1.4; color: var(--ink-2); }
+  font-size: var(--fs-meta); line-height: 1.4; color: var(--ink-2); }
 :is(.f-kids, .g-kids) > .f-ask { margin-left: 18px; }
 .f-ask p { margin: 0 0 8px; }
 .f-ask b { color: var(--ink); font-weight: 600; }
 .f-ask-btns { display: flex; gap: 6px; justify-content: flex-end; }
 .f-ask .pb { display: inline-flex; align-items: center; border: 1px solid var(--ring); background: var(--side); border-radius: 7px;
-  padding: 3px 10px; cursor: pointer; color: var(--ink-2); font: inherit; font-size: 12px; white-space: nowrap; }
+  padding: 3px 10px; cursor: pointer; color: var(--ink-2); font: inherit; font-size: var(--fs-meta); white-space: nowrap; }
 .f-ask .pb:hover { color: var(--ink); background: var(--wash); }
 .f-ask .pb.go { color: #fff; background: var(--critical); border-color: var(--critical); }
 .f-ask .pb.go:hover { color: #fff; background: color-mix(in srgb, var(--critical) 85%, #000); }
 .f-ask .pb:focus-visible { outline: 2px solid var(--axis); outline-offset: 1px; }
 .actor-card .f-ask { margin: 6px 0 2px; }
 .folder-line.editing { gap: 6px; padding: 3px 8px 3px 20px; }
-.folder-line .folder-box { flex: 1 1 auto; min-width: 0; width: auto; margin: 0; font-size: 12.5px; padding: 2px 6px; }
+.folder-line .folder-box { flex: 1 1 auto; min-width: 0; width: auto; margin: 0; font-size: var(--fs-ui); padding: 2px 6px; }
 /* what is in a folder (.f-kids) or a gatherer (.g-kids), set in under its line, its guide line under the caret's
    middle (the line's margin + 4px padding + half the 10px caret): 14px a level, a gatherer's and a folder's alike */
 .g-kids { margin-left: 17px; border-left: 1px solid var(--grid); }
@@ -196,26 +200,30 @@ button:disabled { opacity: .5; cursor: default; }
 :is(.f-kids, .g-kids) .folder-line { margin-left: 4px; }
 :is(.f-kids, .g-kids) > .agent-group { padding-left: 14px; }
 .f-kids.peek { border-left-style: dashed; }
-.f-empty { color: var(--muted); font-size: 11.5px; font-style: italic; padding: 3px 0 5px 14px; }
+.f-empty { color: var(--muted); font-size: var(--fs-meta); font-style: italic; padding: 3px 0 5px 14px; }
 :is(.folder-line, .gatherer-row).drop-on { background: color-mix(in srgb, var(--s1) 14%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--s1) 55%, transparent); }
 :is(.agent, .folder-line).dragging { opacity: .45; }
 /* FOLDERS OF GATHERERS (05-gatherer-folders.js): made from the list's head (.gf-new), a line as a gatherer's folder's;
    what is in one set in under it, its guide line under its caret (the line's margin + 4px padding + half the 10px
    caret), 14px a level, a gatherer's own as in the list's top. The head, a gatherer dragged over it: lit, as a line is */
-.aside-head .gf-new { display: inline-flex; align-items: center; padding: 4px 7px; margin-left: -4px; color: var(--ink-2); }
-.aside-head .gf-new:hover { color: var(--ink); }
+.aside-head .gf-new { display: inline-grid; place-items: center; width: var(--ib); height: var(--ib); padding: 0; margin-left: -4px; border: 0;
+  border-radius: 7px; background: none; color: var(--muted); }
+.aside-head .gf-new:hover { color: var(--ink); background: var(--wash); }
 .aside-head .gf-new svg { display: block; }
 /* a new folder outside every group is a group (05-gatherer-folders.js's nameGroup): its line while ag makes it */
 .gf-line.making { padding: 0 8px 0 20px; color: var(--ink-2); }
-.gf-line.making .fill { margin-left: 8px; font-size: 12px; color: var(--muted); }
+.gf-line.making .fill { margin-left: 8px; font-size: var(--fs-meta); color: var(--muted); }
 /* the head's "+" for an actor on its own (05-group-moves.js's aloneNew): "+" and an actor, as a group's "+ actor" */
-.aside-head .alone-new { display: inline-flex; align-items: center; gap: 1px; padding: 4px 6px; margin-left: -6px; color: var(--ink-2); }
-.aside-head .alone-new:hover:not(:disabled) { color: var(--ink); }
+/* as the folder button beside it: the page's icon button (00-base.css's --ib), bare, a wash under the pointer -- two marks
+   wide, "+" and an agent */
+.aside-head .alone-new { display: inline-flex; align-items: center; justify-content: center; gap: 1px; height: var(--ib); padding: 0 6px;
+  margin-left: -4px; border: 0; border-radius: 7px; background: none; color: var(--muted); }
+.aside-head .alone-new:hover:not(:disabled) { color: var(--ink); background: var(--wash); }
 .aside-head .alone-new:disabled { opacity: .45; cursor: default; }
 .aside-head .alone-new svg { display: block; }
 .aside-head .alone-new.busy svg { animation: term-blink 1s ease-in-out infinite; }
-.dw-menu.alone-box .note { color: var(--ink-2); font-size: 12px; }
+.dw-menu.alone-box .note { color: var(--ink-2); font-size: var(--fs-meta); }
 .aside-head.drop-on { background: color-mix(in srgb, var(--s1) 14%, var(--side));
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--s1) 55%, transparent); }
 .gf-kids { margin-left: 17px; border-left: 1px solid var(--grid); }
@@ -232,17 +240,17 @@ button:disabled { opacity: .5; cursor: default; }
   justify-content: center; background: var(--pick); box-shadow: 0 0 0 1.5px var(--side); color: #fff; cursor: pointer; }
 .agent .avatar .pick svg { width: 11px; height: 11px; stroke-width: 2.2; }
 .pick-bar { flex: none; display: flex; align-items: center; gap: 6px; padding: 8px 10px 8px 16px; border-top: 1px solid var(--ring);
-  background: var(--surface); font-size: 12.5px; }
+  background: var(--surface); font-size: var(--fs-ui); }
 .pick-bar[hidden], :root:is(.list-folded, .list-full) .pick-bar { display: none; }
 .pick-bar .n { font-weight: 600; margin-right: auto; color: var(--pick); white-space: nowrap; }
 .pick-bar .pb { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--ring); background: var(--side); border-radius: 7px;
-  padding: 3px 8px; cursor: pointer; color: var(--ink-2); font: inherit; font-size: 12px; white-space: nowrap; }
+  padding: 3px 8px; cursor: pointer; color: var(--ink-2); font: inherit; font-size: var(--fs-meta); white-space: nowrap; }
 .pick-bar .pb:hover, .pick-bar .pb[aria-expanded="true"] { color: var(--ink); background: var(--wash); }
 .pick-bar .pb svg { width: 13px; height: 13px; flex: none; }
 .pick-bar .pb.x { border: 0; background: none; padding: 3px 6px; }
 .drag-ghost { position: fixed; top: -100px; left: -100px; padding: 4px 10px; border-radius: 999px; background: var(--pick); color: #fff;
-  font-size: 12px; font-weight: 600; }
-.m-folder { display: flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; color: var(--ink-2); padding: 6px 4px 2px; }
+  font-size: var(--fs-meta); font-weight: 600; }
+.m-folder { display: flex; align-items: center; gap: 5px; font-size: var(--fs-meta); font-weight: 600; color: var(--ink-2); padding: 6px 4px 2px; }
 .m-folder svg { color: var(--muted); flex: none; }
 /* a TASK's row (05-agent-list.js's taskRow): as an actor's, its actors' faces and their apps' marks at its right; and
    "+" (an agent or an app added), on its row and an actor's, shown as their bookmark is (hovered, in focus, the one shown) */
@@ -253,11 +261,11 @@ button:disabled { opacity: .5; cursor: default; }
 .t-faces .t-face + .t-face { margin-left: -6px; }
 .t-faces .t-face.none { display: grid; place-items: center; background: var(--surface); }
 .t-faces .t-face.none .logo { width: 14px; height: 14px; }
-.t-faces .t-more { font-size: 11px; color: var(--muted); margin-left: 4px; font-variant-numeric: tabular-nums; }
+.t-faces .t-more { font-size: var(--fs-label); color: var(--muted); margin-left: 4px; font-variant-numeric: tabular-nums; }
 .t-faces .t-app { width: 16px; height: 16px; border-radius: 4px; flex: none; display: block; }
 .task-add { flex: none; display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 2px;
   border-radius: 4px; color: var(--muted); cursor: pointer; }
-.task-add-in { font-size: 15px; font-weight: 500; line-height: 1; }
+.task-add-in { font-size: 15px; font-weight: 600; line-height: 1; }
 .agent .task-add { opacity: 0; }
 .agent:is(:hover, :focus-visible, [aria-current="true"]) .task-add, .agent .task-add:is(:focus-visible, [aria-expanded="true"]) { opacity: 1; }
 @media (hover: none) { .agent .task-add { opacity: 1; } }
@@ -281,19 +289,14 @@ button:disabled { opacity: .5; cursor: default; }
 .agent { grid-template-columns: 10px minmax(0, 1fr) auto; }
 .t-app { width: 14px; height: 14px; border-radius: 4px; flex: none; display: block; }
 .t-app.none { display: grid; place-items: center; color: var(--muted); }
-/* a task in the rail (06-list-modes.js's railTask): its faces grouped in the room of one avatar */
+/* a task in the rail (06-list-modes.js's railTask): its lead's face in the room of one avatar, and how many actors and apps
+   it holds on a badge at its top left (the status dot is at its bottom right, its apps' mark at its top right) */
 .rail .r-task .r-group { position: relative; width: 30px; height: 30px; border-radius: 50%; background: var(--wash); display: block; }
-.rail .r-task .r-group > .logo { position: absolute; width: 18px; height: 18px; border-radius: 50%; box-shadow: 0 0 0 1.5px var(--side); }
+.rail .r-task .r-group > .logo, .rail .r-task .r-group > .app-face { position: absolute; inset: 0; width: 30px; height: 30px; }
 .rail .r-task .r-group > .logo img { width: 100%; height: 100%; display: block; }
-.rail .r-task .r-group.n1 > .logo { inset: 0; width: 30px; height: 30px; box-shadow: none; }
-.rail .r-task .r-group.n2 > .logo:nth-child(1) { left: 0; top: 2px; }
-.rail .r-task .r-group.n2 > .logo:nth-child(2) { right: 0; bottom: 2px; }
-.rail .r-task .r-group:is(.n3, .n4) > .logo { width: 15px; height: 15px; }
-.rail .r-task .r-group:is(.n3, .n4) > .logo:nth-child(1) { left: 0; top: 0; }
-.rail .r-task .r-group:is(.n3, .n4) > .logo:nth-child(2) { right: 0; top: 0; }
-.rail .r-task .r-group:is(.n3, .n4) > .logo:nth-child(3) { left: 0; bottom: 0; }
-.rail .r-task .r-group.n3 > .logo:nth-child(3) { left: 7.5px; }
-.rail .r-task .r-group.n4 > .logo:nth-child(4) { right: 0; bottom: 0; }
+.rail .r-many { position: absolute; left: 0; top: -5px; min-width: 15px; height: 15px; padding: 0 3px; box-sizing: border-box;
+  border-radius: 8px; background: var(--ink); color: var(--side); font-size: 9.5px; font-weight: 700; line-height: 15px;
+  text-align: center; box-shadow: 0 0 0 2px var(--side); pointer-events: none; font-variant-numeric: tabular-nums; }
 /* no badge on it: the room its mask keeps for one (01-layout.css's .agent .avatar img) not cut out */
 .agent .a-face .avatar img { -webkit-mask-image: none; mask-image: none; }
 /* an app's marks in the rail (06-list-modes.js's railApps): small, at the avatar's top right corner, outside it */
@@ -308,7 +311,7 @@ button:disabled { opacity: .5; cursor: default; }
 .actor-card .take-out { padding: 0; }
 .actor-card .take-out svg { flex: none; }
 /* "+"'s label, in a task's card */
-.task-add-in .t-lbl { font-size: 12px; font-weight: 500; margin-left: 5px; }
+.task-add-in .t-lbl { font-size: var(--fs-meta); font-weight: 600; margin-left: 5px; }
 .actor-card .c-acts .task-add { padding: 0 8px 0 6px; }
 /* an app with no mark of its own: its tile, so several stack as marks do */
 .t-app.none { background: var(--surface); border-radius: 4px; }
@@ -342,7 +345,7 @@ dialog.mv-dialog { width: min(480px, calc(100vw - 32px)); }
    is dragged -- over it, so nothing in the list moves mid-drag */
 .aside-head { position: relative; }
 .outside-drop { display: none; position: absolute; inset: 3px 6px; z-index: 3; align-items: center; justify-content: center;
-  border: 1px dashed var(--ring); border-radius: 8px; background: var(--side); color: var(--muted); font-size: 12px; }
+  border: 1px dashed var(--ring); border-radius: 8px; background: var(--side); color: var(--muted); font-size: var(--fs-meta); }
 body.drag-out .outside-drop { display: flex; }
 /* an actor on its own (05-group-moves.js): its row alone, among the groups */
 .gatherer.alone { margin-top: 4px; }
@@ -350,30 +353,25 @@ body.drag-out .outside-drop { display: flex; }
 /* the actors on their own that are closed: their lines at the list's end */
 .gatherer.alone.shut > .agent-group { padding-left: 10px; }
 .outside-drop.drop-on { border-color: var(--warning); color: var(--ink); background: color-mix(in srgb, var(--warning) 14%, var(--side)); }
-.mv-dialog .mv-line { margin: 0; font-size: 13px; line-height: 1.45; }
-.mv-dialog .mv-names { margin: 0; padding-left: 18px; font-size: 12.5px; color: var(--ink-2); display: grid; gap: 2px; }
+.mv-dialog .mv-line { margin: 0; font-size: var(--fs-ui); line-height: 1.45; }
+.mv-dialog .mv-names { margin: 0; padding-left: 18px; font-size: var(--fs-ui); color: var(--ink-2); display: grid; gap: 2px; }
 .mv-dialog .mv-names .more { list-style: none; margin-left: -18px; color: var(--muted); }
-.mv-dialog .mv-note { margin: 0; font-size: 12.5px; color: var(--muted); }
+.mv-dialog .mv-note { margin: 0; font-size: var(--fs-ui); color: var(--muted); }
 .mv-dialog .row { display: flex; justify-content: flex-end; gap: 8px; }
 .agent.drop-on, .rail .r-actor.drop-on { background: color-mix(in srgb, var(--s1) 14%, transparent);
   box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--s1) 55%, transparent); }
-/* where a row's task is open (05-agent-list.js's tabMark): its screen tab's number -- filled, the tab shown; ringed,
-   another */
-.agent .tab-no { flex: none; align-self: center; display: grid; place-items: center; min-width: 16px; height: 16px; padding: 0 3px;
-  box-sizing: border-box; border-radius: 4px; font-size: 10px; font-weight: 600; line-height: 1; color: var(--ink-2);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 26%, transparent); font-variant-numeric: tabular-nums; }
-.agent .tab-no.here { color: var(--ink); background: color-mix(in srgb, var(--ink) 16%, transparent); box-shadow: none; }
-.agent .t-faces .tab-no { margin-right: 4px; }
-.agent:not(.task):has(.a-face > .tab-no) { grid-template-columns: 10px minmax(0, 1fr) auto; }   /* (the face still at its right) */
+/* where a row's task is open (05-agent-list.js's tabMark): its screen tab's number, for a screen reader only -- a boxed
+   number by a face read as an unread count; the row's open bar shows it is open, its hover card which tab (.c-tab) */
+.agent .tab-no { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 /* A GROUP INSIDE ANOTHER GROUP'S FOLDER (05-group-moves.js): its row set in where it is, drawn as a folder's line is --
    the list says nothing of groups (Manage groups does) */
 .gatherer.nested { margin: 0; }
-.gatherer.nested > .gatherer-row .gname { font-size: 13px; font-weight: 600; }
+.gatherer.nested > .gatherer-row .gname { font-size: var(--fs-ui); font-weight: 600; }
 /* MANAGE GROUPS (05-group-moves.js): the list head's button, and its dialog -- each group, its folders and actors set in
    by depth, each with its switch of two at the right */
 dialog.mg-dialog { width: min(620px, calc(100vw - 32px)); max-height: min(78vh, 760px); }
 .mg-form { display: flex; flex-direction: column; gap: 10px; max-height: calc(min(78vh, 760px) - 32px); }
-.mg-say { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.45; }
+.mg-say { margin: 0; font-size: var(--fs-ui); color: var(--muted); line-height: 1.45; }
 /* one column as wide as the panel, not as its longest name: a long name ends in "…", its switch in view at the right */
 .mg-tree { overflow: auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 1px; min-height: 0; }
 .mg-row { display: flex; align-items: center; gap: 10px; min-height: 30px; min-width: 0; padding: 2px 6px;
@@ -384,12 +382,12 @@ dialog.mg-dialog { width: min(620px, calc(100vw - 32px)); max-height: min(78vh, 
 .mg-row.defines { background: color-mix(in srgb, var(--s1) 11%, transparent); }
 .mg-row.defines:hover { background: color-mix(in srgb, var(--s1) 17%, transparent); }
 .mg-row.group { margin-top: 6px; }
-.mg-row.shut { color: var(--muted); font-size: 12px; min-height: 22px; }
-.mg-name { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 7px; font-size: 13px; }
+.mg-row.shut { color: var(--muted); font-size: var(--fs-meta); min-height: 22px; }
+.mg-name { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 7px; font-size: var(--fs-ui); }
 .mg-name > span:last-child, .mg-name b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mg-name svg { flex: none; color: var(--muted); }
 .mg-name .logo { width: 18px; height: 18px; flex: none; }
-.mg-n { font-size: 12px; color: var(--muted); font-weight: 400; white-space: nowrap; }
+.mg-n { font-size: var(--fs-meta); color: var(--muted); font-weight: 400; white-space: nowrap; }
 /* a row's caret, folding what is under it (its name folds it too); the caret's room on a row with nothing under it */
 .mg-fold { flex: none; width: 12px; margin-right: -3px; padding: 0; border: 0; background: none; color: var(--muted);
   display: inline-flex; align-items: center; justify-content: center; }
@@ -399,12 +397,12 @@ button.mg-fold:hover { color: var(--ink); }
 .mg-fold[aria-expanded="true"] .caret { transform: rotate(90deg); }
 .mg-name.foldable { cursor: pointer; }
 /* making a folder: the head's button (at the top: a group), a row's own (seen while it is hovered), the box in place */
-.mg-form .br-title .mg-new { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 3px 9px; }
+.mg-form .br-title .mg-new { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-meta); padding: 3px 9px; }
 .mg-add { flex: none; display: inline-flex; padding: 3px 4px; border: 0; background: none; color: var(--muted); cursor: pointer;
   opacity: 0; }
 .mg-row:hover .mg-add, .mg-add:focus-visible { opacity: 1; }
 .mg-add:hover { color: var(--ink); }
-.mg-input { flex: 1 1 auto; min-width: 0; font-size: 13px; padding: 3px 6px; }
+.mg-input { flex: 1 1 auto; min-width: 0; font-size: var(--fs-ui); padding: 3px 6px; }
 /* dragged and dropped as the list's rows are: what is dragged faded, where it would go lit -- into another group, as
    the list marks it (asked first) */
 .mg-row.dragging { opacity: .45; }
@@ -417,11 +415,11 @@ button.mg-fold:hover { color: var(--ink); }
 .mg-top .outside-drop { inset: -3px 0; background: var(--page); }
 .mg-top .outside-drop.drop-on { background: color-mix(in srgb, var(--warning) 14%, var(--page)); }
 .mg-switch { flex: none; display: inline-flex; border-radius: 7px; box-shadow: 0 0 0 1px var(--ring); overflow: hidden; }
-.mg-switch .mg-opt { border: 0; border-radius: 0; padding: 3px 9px; font-size: 12px; background: none; color: var(--muted); cursor: pointer;
+.mg-switch .mg-opt { border: 0; border-radius: 0; padding: 3px 9px; font-size: var(--fs-meta); background: none; color: var(--muted); cursor: pointer;
   max-width: 12em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }   /* a long group name ends in "…" */
 .mg-switch .mg-opt + .mg-opt { box-shadow: -1px 0 0 var(--ring); }
 .mg-switch .mg-opt.on { background: color-mix(in srgb, var(--s1) 16%, transparent); color: var(--ink); opacity: 1; cursor: default; }
 .mg-switch .mg-opt:disabled:not(.on) { opacity: .45; cursor: default; }
 .mg-switch .mg-opt:not(:disabled):hover { color: var(--ink); background: var(--wash); }
 /* the settings panel's Groups row: what Manage groups is for, its button (05-group-moves.js's manageEntry) */
-#groups-cfg .groups-say, #apps-cfg .apps-say { color: var(--muted); font-size: 12px; }
+#groups-cfg .groups-say, #apps-cfg .apps-say { color: var(--muted); font-size: var(--fs-meta); }

@@ -4,6 +4,7 @@
 // gets the panel opened in the task since; one emptied (its last panel closed, or moved out) goes. And a task's strip
 // (work.ts places it), drawn: its name, then, its tabs being two or more, each tab's name (pressed, shown; double-clicked,
 // named; its ×, closed), and a "+" for another.
+import { glyph } from "../../core/ui/glyphs";
 import type { Node } from "./tree";
 
 export interface TaskTab {
@@ -197,7 +198,7 @@ export function drawStrip(
     const add = document.createElement("button");
     add.type = "button";
     add.className = "lay-tadd";
-    add.textContent = "+";
+    add.append(glyph("plus", 16));
     add.title = add.ariaLabel = "New tab for this task";
     add.addEventListener("click", (ev) => {
       ev.stopPropagation();
@@ -209,7 +210,7 @@ export function drawStrip(
     const x = document.createElement("button");
     x.type = "button";
     x.className = "lay-sclose";
-    x.textContent = "×";
+    x.append(glyph("x", 16));
     x.title = x.ariaLabel = `Close ${head.name} here (agents keep running)`;
     x.addEventListener("click", (ev) => {
       ev.stopPropagation();
@@ -230,7 +231,7 @@ export function drawStrip(
     const x = document.createElement("button");
     x.type = "button";
     x.className = "lay-tclose";
-    x.textContent = "×";
+    x.append(glyph("x", 12));
     x.title = x.ariaLabel = `Close ${t.name} (panels stay in the task)`;
     x.addEventListener("click", (ev) => {
       ev.stopPropagation();

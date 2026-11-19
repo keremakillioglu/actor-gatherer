@@ -173,7 +173,7 @@ test("an app's panel closed by the × over its top right corner: the app left op
     .poll(() =>
       notepadFrame(page).evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--ag-corner")),
     )
-    .toBe("34px");
+    .toBe("40px");
   await expect(panel.locator("body[data-ready='1']")).toHaveCount(1);
   await x.click();
   await expect(page.locator("#top-row > .app-pane")).toHaveCount(0);

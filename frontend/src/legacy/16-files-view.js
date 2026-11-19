@@ -147,7 +147,38 @@ function gitSwitch(n) {
 // of the turn they show. The choice kept in this browser.
 const SIDE_KEY = "ag-dashboard-files-side-folded-2";   // -2: folded by default
 let sideFolded = (() => { try { return localStorage.getItem(SIDE_KEY) !== "0"; } catch (e) { return true; } })();
+// A NARROW pane (under 760px: two side by side, a small window) has no room for them beside the conversation: there
+// they start folded, whatever the choice kept, and open over the conversation (11-files-view.css), not above it --
+// open until folded again or the pane widens; the choice kept is the wide pane's.
+const NARROW_SIDE = 760;
+let narrowOpen = false, wasNarrow = null;
+const ownPane = () => { const m = document.getElementById("main"); return (m && m.closest(".pane")) || null; };
+// the room beside the Details panel, when it is open beside the conversation (05-chat.css's .drawer: 55%, at most 760px,
+// in a pane over 930px; narrower, it lies over the conversation)
+const sideRoom = () => {
+  const w = (ownPane() || {}).clientWidth || innerWidth;
+  return state.details && w > 930 ? w - Math.min(w * 0.55, 760) : w;
+};
+const sideNarrow = () => sideRoom() < NARROW_SIDE;
+const sideIsFolded = () => sideNarrow() ? !narrowOpen : sideFolded;
+let narrowWatch = null;
+function watchNarrow() {   // drawn again when the pane crosses the width, its narrow opening forgotten
+  const p = ownPane();
+  if (narrowWatch || !p) return;
+  narrowWatch = new ResizeObserver(() => {
+    const now = sideNarrow();
+    if (wasNarrow !== null && now !== wasNarrow) { narrowOpen = false; if (state.files) keepingPlace(renderMain); }
+    wasNarrow = now;
+  });
+  narrowWatch.observe(p);
+}
 function foldSide(fold, draw = true) {
+  if (sideNarrow()) {
+    narrowOpen = !fold;
+    if (fold && state.files && state.files.turn !== null) return setFilesTurn(null);
+    if (draw) keepingPlace(renderMain);
+    return;
+  }
   sideFolded = fold;
   try { localStorage.setItem(SIDE_KEY, fold ? "1" : "0"); } catch (e) { /* this page only */ }
   if (fold && state.files && state.files.turn !== null) return setFilesTurn(null);   // folded: the latest turn, which its bar counts
@@ -209,7 +240,7 @@ function barActs() {
     act("Details", DETAILS_TIP, strokeIcon(ICONS.info, 14),
       () => setDetails(!state.details), !!state.details),
     canMinimize() ? act("Minimize the chat", MIN_TIP, strokeIcon(ICONS.minimize, 14), () => setChatMin(true)) : null,
-    act("Close this pane", $("pane-close").title, "×", () => $("pane-close").click(), null, "close"));
+    act("Close this pane", $("pane-close").title, strokeIcon(ICONS.x, 16), () => $("pane-close").click(), null, "close"));
 }
 // Turns are picked in the conversation at the right; the header only offers going back to the latest.
 function filesTools() {
@@ -284,7 +315,7 @@ function callView(call, ran = {}) {
 function fileView(f, rel, id) {
   const box = el("div", { class: "fv" }, el("div", { class: "fv-h" }, el("div", { class: "fv-path", text: rel(f.path) }),
     el("button", { type: "button", class: "fv-close", title: "Close the file", "aria-label": "Close the file",
-      onclick: () => { state.files.sel = null; keepingPlace(renderMain); } }, "×")));
+      onclick: () => { state.files.sel = null; keepingPlace(renderMain); } }, strokeIcon(ICONS.x, 16))));
   // the last call opened when it first shows -- the file opened, or a call new to it -- and left as the reader leaves it;
   // what git changed left out unless shown (gitSwitch)
   const shown = f.sources.map((s, i) => [s, i]).filter(([s]) => showGit || !s.git);
@@ -471,8 +502,10 @@ function filesRender({ info, session, running, writable, held }) {
   const cmdFiles = (c) => (c.files || []).filter((p) => showGit || (c.did || {})[p] || !(c.git || {})[p]);
   const cmds = el("div", { class: "fl-scroll", "data-keep": `files-cmds-${d.turn}`, "data-follow": "1" });
   commands.forEach((c, i) => cmds.append(el("div", { class: "fl-cmd" },
-    el("span", { class: "g " + (c.error ? "err" : c.running && running ? "run" : "ok"), text: "●" }),
-    el("details", { id: `fl-${d.turn}-c${i}` }, el("summary", {}, el("span", { class: "k", text: `${i + 1}` }), callLabel(c, 140),
+    el("span", { class: "g " + (c.error ? "err" : c.running && running ? "run" : "ok"), text: "●",
+      title: c.error ? "Failed" : c.running && running ? "Running" : "Passed" }),   // (no legend: each dot says it)
+    el("details", { id: `fl-${d.turn}-c${i}` }, el("summary", {}, el("span", { class: "tw", "aria-hidden": "true" }),
+      el("span", { class: "k", text: `${i + 1}` }), callLabel(c, 140),
       changedCount(c.changed)),
       cmdFiles(c).length ? el("div", { class: "fl-cmd-files" }, ...cmdFiles(c).map((p) => el("button", { type: "button", title: p,
         onclick: () => { state.files.sel = p; keepingPlace(renderMain); } }, ...((c.did || {})[p] || []).map((k) => kindMark(k, 11)),
@@ -486,12 +519,11 @@ function filesRender({ info, session, running, writable, held }) {
     cmdsShown = shown;
     n.scrollTop = n.scrollHeight;
   });
-  // two sections, each its own size and scrolling, each with the legend of its colours
-  const legend = (pairs) => el("div", { class: "fl-legend" }, ...pairs.map(([name, color]) =>
-    el("span", {}, el("i", { class: "fb", style: `background: ${color}` }), name)));
+  // two sections, each its own size and scrolling; the files' kinds switched under them
   const failed = commands.filter((c) => c.error).length;
   const busy = commands.filter((c) => !c.error && c.running && running).length;
-  const side = sideFolded ? sideBar(files, { ok: commands.length - failed - busy, err: failed, run: busy }, info)
+  watchNarrow();
+  const side = sideIsFolded() ? sideBar(files, { ok: commands.length - failed - busy, err: failed, run: busy }, info)
     : el("div", { class: "fl-side" },
     el("section", { class: "fl-sec files-sec" },
       el("div", { class: "fl-h" }, el("span", { text: files.length ? plural(files.length, "file") : "No files" }),
@@ -502,8 +534,7 @@ function filesRender({ info, session, running, writable, held }) {
         el("span", { class: "p", text: under(cwd, home) ? "~" + cwd.slice(home.length) : cwd })) : null, list,
       kindSwitches(gitFiles)),
     el("section", { class: "fl-sec cmds-sec" },
-      el("div", { class: "fl-h", text: plural(commands.length, "command") + (failed ? ` · ${failed} failed` : "") }), cmds,
-      legend([["passed", "var(--good)"], ["failed", "var(--critical)"], ["running", "var(--warning)"]])),
+      el("div", { class: "fl-h", text: plural(commands.length, "command") + (failed ? ` · ${failed} failed` : "") }), cmds),
     filesBackground(info));
   // the file view only while a file is picked: the files and the conversation have the page until then
   const pane = sel ? el("div", { class: "fl-pane", "data-keep": "files-pane" }, fileView(sel, rel, `fl-${d.turn}-${d.files.indexOf(sel)}`)) : null;
@@ -512,7 +543,8 @@ function filesRender({ info, session, running, writable, held }) {
   // finds it where it is, and leaves it there
   const right = el("div", { class: "fl-right", "data-morph": "" });
   right.kids = [talk, asking].filter(Boolean);
-  return el("div", { class: "fl-grid" + (sel ? " open" : "") + (sideFolded ? " folded" : ""), "data-morph": "" }, side, pane, right);
+  return el("div", { class: "fl-grid" + (sel ? " open" : "") + (sideIsFolded() ? " folded" : "") + (sideNarrow() ? " narrow" : ""),
+    "data-morph": "" }, side, pane, right);
 }
 let cmdsShown = null;
 // What runs in the background, under the commands: a section folded to its heading (openBackground), opened to
@@ -639,7 +671,7 @@ function talkFeed(info, session, writable, held, afresh) {
   return { key: key(...state.selected), gatherer: state.selected[0], files: state.files, data: state.files.data,
     picked: state.files.turn, home: state.home, info, session, view: chatViewOf(info), writable, held,
     canInterrupt: canInterrupt(info), interrupting: isInterrupting(), mine: mySends().map(({ cid, text, at }) => ({ cid, text, at })),
-    sideFolded, earlierTurns, terminalView: CHAT_VIEWS.has("terminal"), afresh };
+    sideFolded: sideIsFolded(), narrow: sideNarrow(), earlierTurns, terminalView: CHAT_VIEWS.has("terminal"), afresh };
 }
 // What the conversation calls of this page (src/features/chat/types.ts's ChatHost), until those parts move too: the actor's
 // stage, a call as the commands show it, an actor's face, a Browser's message, a message's words as matched, the icons;

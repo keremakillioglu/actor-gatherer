@@ -23,6 +23,7 @@
 // A PAGE of the dashboard's -- the Apps page -- is a tab's too (openPage): a tab holding no task shows it in place of
 // the new-tab page, named after it, kept when left as one with tasks is; a task clicked in the list goes in a tab of
 // its own, as from a tab with tasks. One tab at most shows a page: opened again, that tab is shown.
+import { glyph } from "../../core/ui/glyphs";
 import { BarDrag } from "./bar-drag";
 import { nameInPlace } from "./tab-naming";
 import {
@@ -150,7 +151,7 @@ export class Tabs {
     this.add = document.createElement("button");
     this.add.type = "button";
     this.add.className = "lay-tab-add";
-    this.add.textContent = "+";
+    this.add.append(glyph("plus", 16));
     this.add.title = this.add.ariaLabel = "New tab";
     this.add.addEventListener("click", () => void this.blank());
     this.drag = new BarDrag(this.list);
@@ -593,7 +594,7 @@ export class Tabs {
       const close = document.createElement("button");
       close.type = "button";
       close.className = "lay-close";
-      close.textContent = "×";
+      close.append(glyph("x", 13));
       close.title = close.ariaLabel = "Close tab (actors keep running)";
       close.addEventListener("click", (ev) => {
         ev.stopPropagation();

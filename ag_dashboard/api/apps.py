@@ -152,7 +152,10 @@ def apps_attach(srv: Parts, body: Body) -> Response:
     apps too (task_links.py's `link`, `move`) -- the app in none, the app put in the agent's."""
     try:
         gatherer, instance, channel = _need(body, "gatherer", "instance", "channel")
-        _host(srv).instance(gatherer, instance)
+        i = _host(srv).instance(gatherer, instance)
+        if not task_links.taskable(gatherer, tasks.app_item(i.id)):
+            label = _host(srv).hosted(i.app).manifest.label
+            raise AppError(f"every agent of the group can use {label}: no agent is attached to it", 409)
         task_links.link(gatherer, instance, channel, move=True)   # in the app's task: attached to its apps
         return answer({})
     except AppError as exc:

@@ -507,7 +507,7 @@ function histActions() {
       el("span", { class: "h-picked" }, ...(n ? [el("b", { text: plural(n, "message") }), ` · about ${compact(tokens)} tokens`
         + (actors > 1 ? ` · ${actors} actors` : "")] : ["Nothing selected"])),
       el("button", { type: "button", class: "h-x", title: "Close", "aria-label": "Close",
-        onclick: () => { hist.panel = false; hist.recOpen = null; hist.saving = null; histSelect(new Map()); } }, "×")),
+        onclick: () => { hist.panel = false; hist.recOpen = null; hist.saving = null; histSelect(new Map()); } }, strokeIcon(ICONS.x, 16))),
     ask,
     el("div", { class: "kinds" }, ...Object.entries(HIST_KINDS).filter(([, [label]]) => label).map(([k, [label]]) => el("button", { type: "button", ...off,
       title: `${label} with the Gatherer's model`, onclick: () => histMake(k) }, label))),
@@ -726,7 +726,7 @@ function histRender() {
 }
 if (!SNAPSHOT) addChatView({
   id: "history", name: "History", feed: "outline", frame: "hist", chat: false, icon: ICONS.history,
-  description: "Search the history, export it, or have the Gatherer's model summarize it or make a memory or skill from it.",
+  description: "Search, export and summarize the history",
   render: histRender,
 });
 

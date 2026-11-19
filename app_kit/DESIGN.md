@@ -256,6 +256,9 @@ for apps. An app's event types are ag `EventType`s with ag `Property`s (`Manifes
   (Notes' one notebook). A coordinator agent may use every instance of its group either way. Nothing else gives
   access: an attachment outside a task (once made when an agent used an app another task held) is dropped when the
   group is read, its agent told. The older key `offer` is still read ("always" -> group, "attached" -> task).
+- **A group's app is in no task** (decided 2026-11-18): every agent of the group may use it, so a task would mean nothing
+  for it. It is never put in one (task_links.py's `taskable`), and one found in a task is taken out as its group is
+  read. A task app in no task is used by no actor until it is put in one (the coordinator agent may use it).
 - **What an agent is given by name when it starts is only what it may use then.** Every tool call -- an app's own,
   `apps_call`, `ag apps call` -- asks access.py again, and the host asks again before its backend (app_host's
   `may_use`); an agent that left a task is refused at once, whatever its tool list says.
