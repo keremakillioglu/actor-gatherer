@@ -51,15 +51,21 @@ across groups is refused.
 A group placed in a folder that moves goes with it, as an actor in it does: its place names the group the folder is in
 now (`_carried`) -- a folder made a group (`split`), the new group's top; a group merged (`merge`), the folder it became.
 
+Each change is whole to a reader of the home (`settled`): the list never shows one half made -- an actor in both
+groups, as ag's record has it moved and its session's row has it not yet.
+
 A watch of the coordinator agent's on a moved actor goes as coordination.py's `check` says. A coordinator agent over a
 folder (sessions.py's `over`) goes where its folder goes (`_crews`): moved with it into another group, its session's
 group that one from then on -- in no folder there, as it is in none; made the new group's own when its folder is made a
 group (`split`). One over a group stays with its group."""
 
+import contextlib
+import functools
 import os
 import re
 import secrets
 import sqlite3
+import threading
 from typing import Dict, Iterable, List, Optional
 
 from app_kit import AppError
@@ -68,6 +74,34 @@ from . import actions, data, folders, gatherer_folders, home, merges, sessions, 
 
 GROUP = "group"
 ALONE = "self:"                 # an actor on its own: the group of one `self:<its channel>` (the policy's ALONE too)
+#: Held while a change of groups is made (`_whole`): ag's records, the apps moved, the dashboard's own rows -- half a second,
+#: as an app's host moves it. A home read waits for it (`settled`: server.py's `read_home`), so none lists a change half
+#: made: an actor in its new group by ag's record, and in its old one too by its session's row (data.py's
+#: `_with_started`), still to move.
+_CHANGING = threading.RLock()
+SETTLE_SECONDS = 10.0           # the most a home read waits for a change: one stuck, read all the same
+
+
+def _whole(change):
+    """`change` made with nothing reading the home meanwhile (`_CHANGING`): one that makes another (`own`'s `split`, its
+    `move`) holds it throughout."""
+    @functools.wraps(change)
+    def made(*args, **kwargs):
+        with _CHANGING:
+            return change(*args, **kwargs)
+    return made
+
+
+@contextlib.contextmanager
+def settled(seconds: Optional[float] = None):
+    """No change of groups made while in it: one being made waited for first, up to `seconds` (SETTLE_SECONDS) -- then
+    read all the same, as the list showing it half made beats one not answering."""
+    got = _CHANGING.acquire(timeout=SETTLE_SECONDS if seconds is None else seconds)
+    try:
+        yield
+    finally:
+        if got:
+            _CHANGING.release()
 
 
 class GroupError(ValueError):
@@ -277,6 +311,7 @@ def plan(gatherer: str, to: str, channels: Iterable[str] = (), folder: Optional[
                          if i.id in folds else {})} for i in moved]}
 
 
+@_whole
 def move(gatherer: str, to: str, channels: Iterable[str] = (), folder: Optional[int] = None,
          into: Optional[int] = None, dissolve: bool = False) -> dict:
     """The move done (module doc): {actors, apps, joined, from, to} -- `apps` the instances moved, `joined` those closed
@@ -369,6 +404,7 @@ def _group_name(title: str) -> str:
     return name
 
 
+@_whole
 def split(gatherer: str, folder: int) -> dict:
     """The folder `folder` of `gatherer` made a group of its own (module doc): a new group named after it -- its exact
     name its title, where ag takes another -- and what was in it, actors and folders, at the new group's top; the folder
@@ -391,6 +427,7 @@ def split(gatherer: str, folder: int) -> dict:
     return {"group": name, "actors": moved["actors"], "apps": moved["apps"], "from": gatherer}
 
 
+@_whole
 def make(title: str, under: Optional[int] = None) -> dict:
     """A folder made outside every group -- at the list's top, or in a folder of groups `under` (gatherer_folders.py) --
     made a group of its own (the list's folder button): named after `title`, as `split` names one (`ag new`, its exact
@@ -446,6 +483,7 @@ def merge_plan(gatherer: str, to: str, into: Optional[int] = None) -> dict:
                          if i.id in folds else {})} for i in insts]}
 
 
+@_whole
 def merge(gatherer: str, to: str, into: Optional[int] = None) -> dict:
     """The group `gatherer` dropped into the group `to`: made a folder of it, named after it, in `to`'s folder `into`
     (None: its top) -- as a folder dropped outside every group is made a group (`split`). Everything of it goes:
@@ -554,6 +592,7 @@ def places() -> Dict[str, dict]:
     return {g: p for g, p in folders.places().items() if g in there and p["in"] in there}
 
 
+@_whole
 def place(gatherer: str, to: Optional[str], into: Optional[int] = None) -> dict:
     """The group `gatherer` -- an actor on its own's too -- put in group `to`'s folder `into` (None: its top), keeping
     its own group: a group inside that folder, as the list shows it, its actors sharing with each other, no one around
@@ -593,6 +632,7 @@ def _settings_from(group: str, made: str) -> None:
         pass
 
 
+@_whole
 def own(gatherer: str, folder: int) -> dict:
     """The folder `folder` of `gatherer` given a group of its own, where it is (the list's folder menu, `ag groups folder
     ... own`): `split` -- a new group named after it, its actors and folders in it, the rest of their tasks with them --
@@ -606,6 +646,7 @@ def own(gatherer: str, folder: int) -> dict:
     return {**made, "in": gatherer, "folder": parent}
 
 
+@_whole
 def above(gatherer: str) -> dict:
     """The group `gatherer`, placed in a folder of another group, made part of that group again (its folder's menu,
     `ag groups folder ... parent`): merged into it (`merge`), a folder of it where it was. -> merge's. GroupError: placed
@@ -623,6 +664,7 @@ def is_alone(group: str) -> bool:
     return str(group or "").startswith(ALONE)
 
 
+@_whole
 def alone(gatherer: str, channel: str, here: bool = False) -> dict:
     """The actor `channel` of `gatherer` taken out of every group (module doc), in one call to ag: its `group` record,
     {group: self:<channel>, was, name: "", was_name, folder: none}, and a `filed` record of each app that goes with it --

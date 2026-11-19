@@ -13,6 +13,8 @@ export interface Home {
   harness_info?: Record<string, HarnessInfo>;
   /** The harness taken for an actor recorded before ag recorded its harness (harness_kit's DEFAULT). */
   harness_default?: string;
+  /** The group each open app is in, by its instance's id (app_host.py's `groups`): the list puts it there. */
+  app_groups?: Record<string, string>;
 }
 
 /** A harness, as the dashboard reads it (harness_kit's fields). */
