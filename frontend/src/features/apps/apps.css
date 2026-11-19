@@ -1,4 +1,4 @@
-/* An app's panel (host.ts) in the row above the panes (07-panes.js): its frame alone, no head over it; the bar before it
+/* An app's panel (host.ts) in the row above the panes (features/layout/panes.js): its frame alone, no head over it; the bar before it
    (features/layout/place.css), dragged to share the row's width with the panel before it. */
 .top-row > .app-pane {
   flex: 1 1 0;
@@ -16,7 +16,7 @@
   background: var(--surface);
 }
 /* its × (host.ts): over its frame's top right corner -- its panel closed, the app left open -- the same × as an actor
-   pane's (00-base.css's icon button, var(--ib)), 6px in; over the app's own page, so on a little of the panel's surface.
+   pane's (core/page/base.css's icon button, var(--ib)), 6px in; over the app's own page, so on a little of the panel's surface.
    A panel's bars along its top keep that corner clear (app_kit/js/app.js's --ag-corner: 40px). */
 .app-pane > .app-x {
   position: absolute;

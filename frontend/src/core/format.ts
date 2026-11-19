@@ -1,5 +1,5 @@
-// Times, counts and words as the page says them: the same as the old page's helpers (src/legacy/01-helpers.js's full,
-// ago, spell, lasting; 12-transcript.js's plural, firstLine), which stay there for the old page until it goes. Times are
+// Times, counts and words as the page says them: the same as the old page's helpers (src/core/page/helpers.js's full,
+// ago, spell, lasting; features/transcript/transcript.js's plural, firstLine), which stay there for the old page until it goes. Times are
 // the server's, in seconds.
 
 /** A whole number with its thousands marked ("1,204"); a dash for none. */

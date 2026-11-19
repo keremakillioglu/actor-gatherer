@@ -1,4 +1,4 @@
-// A link clicked in an actor's pane, in the app (07-panes.js's openLink): opened in a Browser of the actor's task -- a
+// A link clicked in an actor's pane, in the app (features/layout/panes.js's openLink): opened in a Browser of the actor's task -- a
 // new Browser put in the task of an actor that has none, then new tabs of it -- each page a native one over the
 // Browser's panel, never the user's own browser; a click with ⌘/Ctrl held goes there, as before (main.ts's `outside`).
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";

@@ -25,7 +25,7 @@ STATIC = os.path.join(HERE, "static")                # the build (vite.config.ts
 INDEX = os.path.join(STATIC, "index.html")
 FRONT = os.path.join(os.path.dirname(HERE), "frontend")   # in a checkout only
 COMMAND = "python -m ag_dashboard.page_build"        # what a person runs to build it
-SOURCES = ("src", "index.html", "package.json", "pnpm-lock.yaml", "vite.config.ts", "vite-plugin-legacy.ts")
+SOURCES = ("src", "index.html", "package.json", "pnpm-lock.yaml", "vite.config.ts")
 NODE = ((20, 19), (22, 12))                          # Vite's: ^20.19 || >=22.12
 NODE_SAID = "Node.js 22.12 or newer"
 TAIL = 30                                            # the lines of a failed step's output told

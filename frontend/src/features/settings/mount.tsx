@@ -12,7 +12,7 @@ export interface Panel {
 export function mountSettings(host: HTMLElement, panel: Panel) {
   host.hidden = false;
   createRoot(host).render(<AgSettings closePanel={panel.close} />);
-  // "No model set" on the panel's button, in the page's header (still the old page's: src/legacy/)
+  // "No model set" on the panel's button, in the page's header (still the old page's: features/page/data.js)
   const flag = document.getElementById("cfg-flag");
   useSettings.subscribe((st) => {
     if (flag) flag.hidden = !unset(st.settings);
