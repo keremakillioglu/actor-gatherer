@@ -41,8 +41,10 @@ aside h2 { font-size: var(--fs-label); text-transform: uppercase; letter-spacing
   padding: 1px; border-radius: 6px; opacity: 0; pointer-events: none; background: linear-gradient(var(--wash), var(--wash)), var(--side); }
 .gatherer-row:is(:hover, :focus-within) .g-acts, .gatherer-row:has(.g-acts :is([aria-expanded="true"], .busy)) .g-acts {
   opacity: 1; pointer-events: auto; }
-.gatherer-row .g-acts .act { margin: 0; height: 22px; }
-.gatherer-row .g-acts .act.start + .act:not(.start) { margin-left: 4px; }   /* the starts apart from the rest, as a folder's */
+/* its two, hovered: "+" (startButtons: everything that starts here) and "⋯" (rowMore: a folder, rename, hide), the page's
+   icon button (00-base.css's --ib) */
+.gatherer-row .g-acts .act { margin: 0; width: var(--ib); height: var(--ib); padding: 0; justify-content: center; border-radius: 7px; }
+.gatherer-row .g-acts .act:is(:hover, :focus-visible, [aria-expanded="true"]) { background: var(--wash); outline: none; }
 .gatherer-row .name + .act.crew, .gatherer-row .name-box + .act.crew { align-self: center; margin: 0 0 0 2px; padding: 0 3px; }
 .folder-line .fbtn + .act.crew { align-self: center; flex: none; margin: 0 2px; padding: 0 3px; }   /* a folder's coordinator agent */
 /* its face just after the folder's name, as a group's is, clear of the buttons shown over the counts when hovered */

@@ -20,7 +20,8 @@ test("keeps actors in folders: made from the gatherer's row, filled by dragging,
   try {
     await expect(page.locator("#agents .folder-line")).toHaveCount(0);
     await gRow.hover();
-    await gRow.locator(".act.newfolder").click();
+    await gRow.locator(".act.row-more").click(); // its "⋯": a new folder, rename, hide
+    await page.locator(".row-menu[role=menu]").getByRole("menuitem", { name: "New folder" }).click();
     await box.fill("  Paper   revisions ");
     await box.press("Enter");
     await expect(line("Paper revisions")).toBeVisible();
@@ -36,13 +37,17 @@ test("keeps actors in folders: made from the gatherer's row, filled by dragging,
     await expect.poll(async () => (await treeOf(page)).filed).toEqual({ [claudeCh]: paper });
     expect(Object.keys((await homeOf(page)).saved?.[GATHERER] || {})).toEqual([]); // put in a folder: not saved
 
-    await line("Paper revisions").hover(); // a folder in it, from its line's buttons
-    await line("Paper revisions").locator(".folder-act.new").click();
+    // its line's "⋯": a folder in it, renamed, deleted
+    const more = async (name: string, item: string) => {
+      await line(name).hover();
+      await line(name).locator(".act.row-more").click();
+      await page.locator(".row-menu[role=menu]").getByRole("menuitem", { name: item }).click();
+    };
+    await more("Paper revisions", "New folder");
     await box.fill("Figures");
     await box.press("Enter");
     await expect(page.locator("#agents .f-kids .folder-line", { hasText: "Figures" })).toBeVisible();
-    await line("Paper revisions").hover();
-    await line("Paper revisions").locator(".folder-act.rename").click();
+    await more("Paper revisions", "Rename");
     await box.fill("Drafts");
     await box.press("Enter");
     await expect(line("Drafts")).toBeVisible();
@@ -54,8 +59,7 @@ test("keeps actors in folders: made from the gatherer's row, filled by dragging,
     await expect(page.locator("#agents .f-kids button.agent", { hasText: CLAUDE })).toHaveCount(0);
     await expect.poll(async () => (await treeOf(page)).filed).toEqual({});
 
-    await line("Drafts").hover(); // deleted: the folder in it moves up a level
-    await line("Drafts").locator(".folder-act.delete").click();
+    await more("Drafts", "Delete"); // deleted: the folder in it moves up a level
     await expect(page.locator("#agents .folder-line .fname")).toHaveText(["Figures"]);
     await expect
       .poll(async () => (await treeOf(page)).folders.map((f) => [f.name, f.parent]))
@@ -85,7 +89,8 @@ test("an action's answer, come late, does not undo a change the stream brought m
       await route.fulfill({ response: answer });
     });
     await folder("Old").hover();
-    await folder("Old").locator(".folder-act.delete").click();
+    await folder("Old").locator(".act.row-more").click(); // its "⋯": Delete
+    await page.locator(".row-menu[role=menu]").getByRole("menuitem", { name: "Delete" }).click();
     await expect.poll(async () => (await treeOf(page)).folders.length).toBe(0);
     await newFolder(page, "Later");
     await expect(folder("Later")).toBeVisible(); // the stream's home
@@ -193,35 +198,27 @@ test("a folder starts actors in it: its + and + ⋯ on its line, shown while hov
     await expect(line.locator(".f-acts")).toHaveCSS("opacity", "0"); // at rest: its name and counts alone
     await line.hover();
     await expect(line.locator(".f-acts")).toHaveCSS("opacity", "1");
-    await expect(line.locator(".act.start:not(.crew)")).toHaveCount(2); // "+ actor" and "+ ⋯"
+    await expect(line.locator(".act.start:not(.crew)")).toHaveCount(1); // "+": all that starts there
     await expect(line.locator(".f-acts .act.crew:not(.on)")).toHaveCount(1); // and a coordinator agent started over it
-    // the gatherer's row has the same, in the same order -- hide where a folder has delete -- shown while hovered too; its
-    // coordinator agent's face apart, just after its name, always shown
+    // the gatherer's row has the same two, "+" (all that starts there) and "⋯" (a folder, rename, hide -- a folder's: delete),
+    // shown while hovered; a folder's line its × too; its coordinator agent's face apart, just after its name, always shown
     const order = (box: string) =>
       page
         .locator(box)
         .first()
         .evaluate((n) =>
           [...n.querySelectorAll("button:not(.crew)")].map((b) =>
-            [...b.classList].find((c) =>
-              ["new-actor", "new-more", "new", "newfolder", "rename", "hide", "delete"].includes(c),
-            ),
+            [...b.classList].find((c) => ["new-actor", "row-more", "close"].includes(c)),
           ),
         );
-    expect(await order("#agents .folder-line .f-acts")).toEqual(["new-actor", "new-more", "new", "rename", "delete"]);
-    expect(await order("#agents .gatherer-row .g-acts")).toEqual([
-      "new-actor",
-      "new-more",
-      "newfolder",
-      "rename",
-      "hide",
-    ]);
+    expect(await order("#agents .folder-line .f-acts")).toEqual(["new-actor", "row-more", "close"]);
+    expect(await order("#agents .gatherer-row .g-acts")).toEqual(["new-actor", "row-more"]);
     const gRow = page.locator("#agents .gatherer-row").first();
     await expect(gRow.locator(".g-acts")).toHaveCSS("opacity", "0");
     await expect(gRow.locator(":scope > .act.crew")).toBeVisible();
     await line.locator("button.new-actor").click();
     const menu = page.locator(".row-menu[role=menu]");
-    await expect(menu.locator(".hd")).toContainText("New actor in Ideas"); // (its directory under it)
+    await expect(menu.locator(".hd")).toContainText("New in Ideas"); // (its directory under it)
     await menu.getByRole("menuitem", { name: "Claude Code" }).click();
     await expect.poll(async () => (await treeOf(page)).filed).toEqual({ [started]: ideas }); // filed there once started
   } finally {

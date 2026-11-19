@@ -164,6 +164,7 @@ button:disabled { opacity: .5; cursor: default; }
 .folder-line .act { border: 0; border-radius: 6px; background: none; color: var(--muted); padding: 0 4px; height: 22px; line-height: 1;
   display: inline-flex; align-items: center; cursor: pointer; flex: none; }
 .folder-line .act:hover, .folder-line .act:focus-visible, .folder-line .act[aria-expanded="true"] { color: var(--ink); background: var(--wash); }
+.folder-line .f-acts .act { width: var(--ib); height: var(--ib); padding: 0; justify-content: center; border-radius: 7px; }   /* as a group's */
 .folder-line .act.start { gap: 1px; font-size: var(--fs-body); }
 .folder-line .act.start svg { display: block; pointer-events: none; }
 .folder-line .act.start.busy svg { animation: term-blink 1s ease-in-out infinite; }

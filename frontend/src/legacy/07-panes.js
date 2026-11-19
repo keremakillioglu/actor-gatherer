@@ -1385,8 +1385,13 @@ const startAny = (gatherer, cwd, harness) => harness === SHELL_START ? startShel
   : startSession(gatherer, cwd, harness);
 const appStart = (v) => { const [name, ...h] = v.slice(APP_START.length).split(":"); return [name, h.join(":")]; };
 // The apps found that can be opened with an agent of their own (DocWriter, say): those a new actor can be started with.
+// THE APPS OFFERED, one order wherever they are listed (a group's "+ ⋯" menu, the new-tab page): each app by its name
+// (openableApps), then those that can have an agent of their own, again by name ("… with an agent": startingApps), then a
+// terminal -- "…" only on an entry that opens a box to fill in first.
+const byLabel = (x, y) => x.label.localeCompare(y.label);
+const openableApps = () => (PANE || SNAPSHOT || !window.agNext ? [] : window.agNext.apps.found()).filter((a) => !a.failed).sort(byLabel);
 const startingApps = () => (PANE || SNAPSHOT || !window.agNext ? [] : window.agNext.apps.found())
-  .filter((a) => a.agent && a.agent.offered && !a.failed);
+  .filter((a) => a.agent && a.agent.offered && !a.failed).sort(byLabel);
 const cwdOf = (a) => a.cwd || (a.session && a.session.cwd) || "";    // a session started here: its own, before any call names one
 const startCwd = (g) => cwdOf(g.agents.filter(cwdOf).sort((x, y) => (y.last || 0) - (x.last || 0))[0] || {});
 // A coordinator agent's button (CREW_START), on its node's row -- a group's, a folder's, a folder of groups', the list's
@@ -1454,24 +1459,27 @@ function startButtons(g, folder = null, prefix = "") {
   const ours = state.starting && state.starting.gatherer === g.name;
   const starting = ours && startIn.g === g.name && startIn.folder === fid ? String(state.starting.harness) : "";
   const off = state.starting ? { disabled: "" } : {};
-  const plus = () => el("span", { class: "plus", "aria-hidden": "true", text: "+" });
-  const actorKey = `${prefix}actor:${g.name}${at}`, moreKey = `${prefix}more:${g.name}${at}`;   // a card's: its own (prefix)
-  const actor = !hs.length ? el("button", { class: "act add", type: "button", disabled: "", title: noHarness(), "aria-label": noHarness() }, "+")
-    : el("button", { class: "act start new-actor" + (hs.includes(starting) ? " busy" : ""), type: "button", ...off, "data-pop": actorKey,
-      title: `New actor in ${place}${where ? ` · ${where}` : ""} · ${hs.map(harnessName).join(" or ")}`,
-      "aria-label": `New actor in ${place}`, ...(hs.length > 1 ? { "aria-haspopup": "menu", "aria-expanded": String(rowPop.key === actorKey) } : {}),
-      onclick: (ev) => {
-        aimStart(g.name, fid);
-        if (hs.length > 1) openActorMenu(g, hs, ev.currentTarget, actorKey, undefined, folder ? place : null); else addSession(g, hs[0]);
-      } },
-      plus(), strokeIcon(ICONS.agent, 16));
-  const others = moreStarts(g, hs, where, moreKey);
-  const more = others.length ? el("button", { class: "act start new-more" + (starting === SHELL_START || starting === BRANCH_START
-      || starting.startsWith(APP_START) ? " busy" : ""), type: "button", ...off, "data-pop": moreKey,
-    title: `More to start in ${place}: ${others.map((o) => o.text.replace("…", "").toLowerCase()).join(", ")}`,
-    "aria-label": `More to start in ${place}`, "aria-haspopup": "menu", "aria-expanded": String(rowPop.key === moreKey),
-    onclick: (ev) => { aimStart(g.name, fid); openMoreMenu(g, hs, ev.currentTarget, moreKey, place); } }, plus(), strokeIcon(ICONS.more, 16)) : null;
-  return [actor, more].filter(Boolean);
+  // ONE "+": everything that can start here, in one menu -- an actor on each harness, then an actor on a branch, the
+  // apps, a terminal (moreStarts) -- headed by where (the folder, else the group) and its directory. Its classes are both
+  // the old buttons' (new-actor, new-more): what started from either starts from it.
+  const key = `${prefix}start:${g.name}${at}`;   // a card's: its own (prefix)
+  const items = [...hs.map((h) => ({ mark: harnessBadge(h), text: harnessName(h), run: () => addSession(g, h) })),
+    ...(hs.length ? [{ sep: true }] : []), ...moreStarts(g, hs, where, key)];
+  if (!items.some((it) => !it.sep))
+    return [el("button", { class: "act add", type: "button", disabled: "", title: noHarness(), "aria-label": noHarness() }, strokeIcon(ICONS.plus, 16))];
+  const busy = hs.includes(starting) || starting === SHELL_START || starting === BRANCH_START || starting.startsWith(APP_START);
+  return [el("button", { class: "act start new-actor new-more" + (busy ? " busy" : ""), type: "button", ...off, "data-pop": key,
+    title: `New in ${place}${where ? ` · ${where}` : ""}`, "aria-label": `New in ${place}`, "aria-haspopup": "menu",
+    "aria-expanded": String(rowPop.key === key),
+    onclick: (ev) => { aimStart(g.name, fid); openPop(key, ev.currentTarget, popMenu(`New in ${place}`, items, where, where)); } },
+  strokeIcon(ICONS.plus, 16))];
+}
+// A row's "⋯": what it can do besides start things (a new folder in it, rename it, hide or delete it), as a menu -- so its
+// row, hovered, shows two buttons, not six. `items`: [{icon, text, run}].
+function rowMore(key, name, items) {
+  return el("button", { class: "act row-more", type: "button", "data-pop": key, title: `More for ${name}`, "aria-label": `More for ${name}`,
+    "aria-haspopup": "menu", "aria-expanded": String(rowPop.key === key),
+    onclick: (ev) => { ev.stopPropagation(); openPop(key, ev.currentTarget, popMenu(name, items)); } }, strokeIcon(ICONS.more, 16));
 }
 // The "+ more" drop-down's starts: what each is (an app by its name and mark alone, no description under it; a branch and
 // a terminal say where they work), and what choosing it does. `key`: its button's data-pop.
@@ -1481,13 +1489,13 @@ function moreStarts(g, hs, where, key = `more:${g.name}`) {
   return [
     hs.length ? { icon: ICONS.branch, text: "Actor on a branch…", note: "in its own worktree, merged into the project",
       run: (button) => openBranchMenu(g, button) } : null,
+    ...openableApps().map((a) => ({ icon: ICONS.app, mark: a.mark ? appMarkImg(a) : null, text: a.label,
+      run: () => openAppTab(g.name, a.name, startCwd(g)) })),
     ...(tooled.length ? startingApps() : []).map((a) => ({ icon: ICONS.app, mark: a.mark ? appMarkImg(a) : null,
       text: `${a.label} with an agent…`,
       run: (button) => openPop(key, button, appStartBox(g, tooled, a)) })),
     // (where it opens: the menu's heading says it)
     state.home.terminals !== false ? { icon: ICONS.terminal, text: "Terminal", note: where ? null : there, run: () => addSession(g, SHELL_START) } : null,
-    ...(PANE || SNAPSHOT ? [] : window.agNext.apps.found()).filter((a) => !a.failed).map((a) => ({ icon: ICONS.app,
-      mark: a.mark ? appMarkImg(a) : null, text: a.label, run: () => openAppTab(g.name, a.name, startCwd(g)) })),
   ].filter(Boolean);
 }
 // `key`: the button's data-pop (the list's "+ actor", or the rail's "+"); `start`: what a harness chosen does; `place`: the
@@ -1591,7 +1599,7 @@ function openMoreMenu(g, hs, button, key = `more:${g.name}`, place = titleOf(g))
 function popMenu(head, items, title, sub) {
   return el("div", { class: "br-menu row-menu", role: "menu", "aria-label": head },
     el("div", { class: "hd", ...(title ? { title } : {}) }, head, sub ? el("span", { class: "sub", text: sub }) : null),
-    ...items.map((it) => el("button", { type: "button", role: "menuitem", ...(it.depth ? { style: `padding-left: ${10 + it.depth * 14}px` } : {}), onclick: (ev) => {
+    ...items.map((it) => it.sep ? el("div", { class: "sep", role: "separator" }) : el("button", { type: "button", role: "menuitem", ...(it.depth ? { style: `padding-left: ${10 + it.depth * 14}px` } : {}), onclick: (ev) => {
       ev.stopPropagation();
       const button = popButton();
       closePop();

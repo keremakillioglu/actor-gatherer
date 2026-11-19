@@ -486,12 +486,11 @@ function gathererBox(g) {
       // rename, and hide (a folder's: delete)
       el("span", { class: "fill", onclick: () => toggleGatherer(g.name) }, ...gathererCounts(g),
         el("span", { class: "g-acts", onclick: (ev) => ev.stopPropagation() }, ...(SNAPSHOT ? [] : startButtons(g)),
-          SNAPSHOT ? null : el("button", { class: "act newfolder", type: "button", title: `New folder in ${titleOf(g)}`,
-            "aria-label": `New folder in ${titleOf(g)}`, onclick: () => startFolderEdit(g.name, null, null) }, strokeIcon(ICONS.folderNew, 14)),
-          SNAPSHOT ? null : el("button", { class: "act rename", type: "button", title: `Rename ${titleOf(g)}`, "aria-label": `Rename ${titleOf(g)}`,
-            onclick: () => retitle(g) }, strokeIcon("M10.6 2.6l2.8 2.8-7.9 7.9-3.4.6.6-3.4zM9.1 4.1l2.8 2.8", 14)),
-          el("button", { class: "act hide", type: "button", title: `Hide ${g.name}`, "aria-label": `Hide ${g.name}`, onclick: () => setHidden(g, true) },
-            hideIcon())))), g), g, null, () => { if (collapsed.has(g.name)) toggleGatherer(g.name); }));
+          rowMore(`gmore:${g.name}`, titleOf(g), [
+            ...(SNAPSHOT ? [] : [{ icon: ICONS.folderNew, text: "New folder", run: () => startFolderEdit(g.name, null, null) },
+              { icon: ICONS.pencil, text: "Rename", run: () => retitle(g) }]),
+            { mark: hideIcon(), text: "Hide", run: () => setHidden(g, true) }])))), g), g, null,
+    () => { if (collapsed.has(g.name)) toggleGatherer(g.name); }));
   if (state.adding && state.adding.gatherer === g.name) box.append(newForm());
   if (g.error) box.append(el("div", { class: "servers", text: `Database unreadable: ${g.error}` }));
   // open: what is in it -- its gatherer agent, then its box's rows -- set in under its row, as a folder's are (g-kids)
@@ -1353,10 +1352,10 @@ function folderLine(g, f) {
     folderAct("delete", `Delete ${f.name} · its contents move up a level`, strokeIcon(ICONS.bin, 14), () => deleteFolder(g.name, f.id)),
     folderAct("reopen", `Reopen ${f.name} · its actors stay closed`, strokeIcon(ICONS.folderOpen, 14), () => reopenFolder(g.name, f.id)),
   ] : [...startButtons(g, f), crewAt(`folder:${f.id}`, g)[1] ? null : crewButton(g, `folder:${f.id}`),
-    folderAct("new", `New folder in ${f.name}`, strokeIcon(ICONS.folderNew, 14), () => startFolderEdit(g.name, null, f.id)),
-    folderAct("rename", `Rename ${f.name} (F2)`, strokeIcon(ICONS.pencil, 13), () => startFolderEdit(g.name, f.id)),
-    folderAct("delete", `Delete ${f.name} · its contents move up a level${crewAt(`folder:${f.id}`, g)[1] ? " and its coordinator agent closes" : ""}`,
-      strokeIcon(ICONS.bin, 14), () => deleteFolder(g.name, f.id)),
+    rowMore(`fmore:${g.name}:${f.id}`, f.name, [
+      { icon: ICONS.folderNew, text: "New folder", run: () => startFolderEdit(g.name, null, f.id) },
+      { icon: ICONS.pencil, text: "Rename", run: () => startFolderEdit(g.name, f.id) },
+      { icon: ICONS.bin, text: crewAt(`folder:${f.id}`, g)[1] ? "Delete (its coordinator agent closes)" : "Delete", run: () => deleteFolder(g.name, f.id) }]),
     folderAct("close", `Close ${f.name} and every actor in it`, closeIcon(), () => pressClose(g, f, "list"))];
   const line = el("div", { class: "folder-line" + (closed ? " closed" : ""), "data-key": `${g.name}/folder:${f.id}`, "data-card": key(g.name, `folder:${f.id}`) },
     el("button", { class: "fbtn", type: "button", "aria-expanded": open ? "true" : "false",
