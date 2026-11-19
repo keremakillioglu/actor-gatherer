@@ -344,6 +344,22 @@ old page's "Files view") is React now; what is around it is still the old page's
 - Panes become components in one page, sharing one stream.
 - `page.js` has no module left to start, and goes with the bridge.
 
+The layout slice comes first, in four steps, each with every test passing:
+1. *The model* (built): `features/layout/model.ts`, one `Layout` value -- the screen tabs, the tab shown, what each
+   task was left with -- and pure functions for every change, by the rules `tabs.ts` and `rememberTask` have; with
+   `migrate()` from the six keys (`panes`, `top-apps`, `task-layouts-2`, `screen`, `screen-tabs`, `task-trees`).
+2. *Shadow mode* (built): `shadow.ts` runs the model beside the page. Each change is told where the page makes it --
+   the tab bar's operations, a task entered (`enterTask`, `enterAppsTask`), opened beside, an app's panel added, a
+   task's last panel closed, the actor the page opens on by itself -- and once the page is quiet, the tasks shown and
+   every tab's are checked against it. The browser tests record each difference (`AG_LAYOUT_STRICT` fails on one).
+   A task's key is read as it is now (`keysNow`): the task an item joined, or the items of one that dissolved, those
+   whose panels are open.
+3. *Reads*: the page and the tabs read the model; the copying of `shown()` into the tab, and the replay on a switch and
+   at a reload, go.
+4. *Writes*: clicks call the model's functions, one renderer opens and closes panes to match it, and the old variables
+   (`appsOnly`, `taskNow`, `hereAway`, `tasksLaidOut`, `autoShown`, `taskLayouts`) and the six keys go -- one key,
+   `ag-dashboard-layout`. The model then holds each task's open items itself (what `keysNow` reads off the panels now).
+
 ### Track B: the server
 
 **B1. FastAPI beside the old server, then in its place.** Built.
