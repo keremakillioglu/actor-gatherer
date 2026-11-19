@@ -6,7 +6,7 @@
 .side { position: relative; display: flex; flex-direction: column; min-height: 0; border-right: 2px solid var(--side-rule); background: var(--side); }
 /* its right edge, dragged, its width (--side-w; widthGrip); a double click: the width it had first */
 .side-grip { position: absolute; top: 0; bottom: 0; right: -4px; width: 7px; cursor: col-resize; z-index: 5; touch-action: none; }
-:is(.side-grip, .rail-grip, .ed-col-grip):is(:hover, .on) { background: color-mix(in srgb, var(--axis) 50%, transparent); }
+:is(.side-grip, .rail-grip):is(:hover, .on) { background: color-mix(in srgb, var(--axis) 50%, transparent); }
 :root:is(.list-folded, .list-full) .side-grip { display: none; }
 aside { border-right: 1px solid var(--side-rule); background: var(--side); padding: 12px 0; overflow-y: auto; }
 #agents { flex: 1; min-height: 0; border-right: 0; }
@@ -330,7 +330,7 @@ button.agent-group:hover { color: var(--ink-2); }
 .rail .r-check:hover { color: var(--ink); }
 /* the card an actor shows hovered, in the rail or the list (actorCard): who it is, its status, what it was asked, its
    recap -- beside the rail or the list, the pointer passing through it */
-.actor-card { position: fixed; z-index: 70; width: 300px; max-width: calc(100vw - 16px); box-sizing: border-box; padding: 10px 12px 9px;
+.actor-card { position: fixed; z-index: var(--z-hover); width: 300px; max-width: calc(100vw - 16px); box-sizing: border-box; padding: 10px 12px 9px;
   display: grid; gap: 5px; background: var(--surface); color: var(--ink); border: 1px solid var(--ring); border-radius: 9px;
   box-shadow: 0 8px 24px rgba(0,0,0,.22); font-size: var(--fs-meta); line-height: 1.4; pointer-events: none; }
 .actor-card[hidden] { display: none; }
@@ -406,7 +406,7 @@ button.agent-group:hover { color: var(--ink-2); }
 .actor-card .c-more { color: var(--muted); font-size: var(--fs-meta); }
 .actor-card .c-tab { color: var(--ink-2); font-size: var(--fs-meta); }   /* where it is open: the tab (features/list/list.js's tabLine) */
 .actor-card .c-hint { color: var(--muted); font-size: var(--fs-label); border-top: 1px solid var(--grid); padding-top: 5px; margin-top: 1px; }
-:root.list-full .side { position: fixed; inset: var(--bar-h) 0 0 0; z-index: 25; border-right: 0; }
+:root.list-full .side { position: fixed; inset: var(--bar-h) 0 0 0; z-index: var(--z-list-over); border-right: 0; }
 :root.list-full .work { grid-column: 2; grid-row: 1; }
 :root.list-full #agents { display: none; }
 .monitor:focus { outline: none; }
@@ -527,7 +527,7 @@ main { padding: 0; min-width: 0; min-height: 0; display: flex; position: relativ
    and back once the pointer has left it */
 :root.list-hidden:not(.list-full) .layout { grid-template-columns: 0 minmax(0, 1fr); }
 :root.list-hidden:not(.list-full) .work { grid-column: 2; grid-row: 1; }
-:root.list-hidden:not(.list-full) .side { position: fixed; top: var(--bar-h); bottom: 0; left: 0; z-index: 40;
+:root.list-hidden:not(.list-full) .side { position: fixed; top: var(--bar-h); bottom: 0; left: 0; z-index: var(--z-list-peek);
   width: min(var(--side-w, 320px), calc(100vw - 60px)); transform: translateX(-100%); visibility: hidden;
   transition: transform .16s ease, box-shadow .16s ease, visibility 0s linear .16s; }
 :root.list-hidden.list-folded .side { width: var(--rail-w, 76px); }
@@ -535,7 +535,7 @@ main { padding: 0; min-width: 0; min-height: 0; display: flex; position: relativ
   transition: transform .16s ease, box-shadow .16s ease, visibility 0s; }
 :root.list-hidden :is(.side-grip, .rail-grip) { display: none; }
 .list-edge { display: none; }
-:root.list-hidden:not(.list-full) .list-edge { display: block; position: fixed; top: var(--bar-h); bottom: 0; left: 0; width: 8px; z-index: 39; }
+:root.list-hidden:not(.list-full) .list-edge { display: block; position: fixed; top: var(--bar-h); bottom: 0; left: 0; width: 8px; z-index: calc(var(--z-list-peek) - 1); }
 :root.list-hidden:not(.list-full) .list-edge::after { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 3px;
   background: var(--side-rule); transition: background .12s; }
 :root.list-hidden:not(.list-full) .list-edge:hover::after { background: var(--s1); }

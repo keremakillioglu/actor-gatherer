@@ -263,9 +263,14 @@ function setAbout(open) {
 }
 // Light, dark, or the system's: kept in this browser, the page is dark until one is picked.
 const THEME_KEY = "ag-dashboard-theme";
+// "system": the system's look, followed as it changes (start()'s listener). The page always says which it shows
+// (data-theme), so its stylesheet has the dark palette once (core/page/base.css).
+let themePick = "system";
+const systemDark = () => matchMedia("(prefers-color-scheme: dark)").matches;
 function setTheme(pick, keep) {
   if (pick !== "light" && pick !== "dark") pick = "system";
-  if (pick === "system") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = pick;
+  themePick = pick;
+  document.documentElement.dataset.theme = pick === "system" ? (systemDark() ? "dark" : "light") : pick;
   for (const b of document.querySelectorAll("[data-theme-pick]")) b.setAttribute("aria-pressed", b.dataset.themePick === pick ? "true" : "false");
   if (keep) { prefs.setText(THEME_KEY, pick); }
   for (const p of panes.others) p.call("theme", pick);
@@ -300,7 +305,9 @@ export function start() {
   document.addEventListener("input", (ev) => {
     if (ev.target && ev.target.id === "composer-text") { lastKey = performance.now(); fitBox(ev.target); keepDraft(ev.target.dataset.draft, ev.target.value); }
   }, true);
-  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => window.dispatchEvent(new Event("ag-theme")));
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+    if (themePick === "system") setTheme("system", false); else window.dispatchEvent(new Event("ag-theme"));
+  });
   setAvatarMode(prefs.text(AVATAR_KEY), false, false);
   document.getElementById("avatar-mode").addEventListener("click", (ev) => {
     const b = ev.target.closest("[data-avatar-pick]");

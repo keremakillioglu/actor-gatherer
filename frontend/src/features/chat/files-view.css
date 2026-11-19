@@ -719,10 +719,6 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
 .files .ln.hit .tx { background: color-mix(in srgb, var(--s4) 14%, transparent); }
 .files .gap { color: var(--muted); font-size: var(--fs-label); padding: 1px 0 1px 74px; margin: 3px 0; background: var(--wash); }
 .files .fv-note { color: var(--muted); font-size: var(--fs-meta); padding: 10px 16px 0; }
-.files .fv-block { margin: 10px 16px 0; } .files .fv-block .diff div { white-space: pre-wrap; overflow-wrap: anywhere; font: var(--fs-meta)/1.5 var(--mono); padding: 0 6px; }
-.files .fv-block .diff .add { background: color-mix(in srgb, var(--good) 15%, transparent); }
-.files .fv-block .diff .del { background: color-mix(in srgb, var(--critical) 15%, transparent); }
-.files .fv-block .diff .ctx { color: var(--muted); }
 /* code, coloured by the page's highlighter (hlTokens, shLex): what a reader scans for, the rest in the text's own ink */
 .hl-com { color: var(--hl-com); font-style: italic; } .hl-kw, .hl-tag { color: var(--hl-kw); } .hl-str { color: var(--hl-str); }
 .hl-num { color: var(--hl-num); } .hl-fn { color: var(--hl-fn); } .hl-prop { color: var(--hl-prop); } .hl-meta { color: var(--hl-meta); }

@@ -18,23 +18,7 @@
   --hl-bg: color-mix(in srgb, var(--ink) 4%, var(--surface));
   --scroll: rgba(0,0,0,.16);
 }
-@media (prefers-color-scheme: dark) {
-  :root:where(:not([data-theme="light"])) {
-    color-scheme: dark;
-    --page: #111110; --surface: #1f1f1d; --side: #121211; --side-rule: rgba(255,255,255,0.14); --ink: #ecebe7; --ink-2: #c3c2b7; --muted: #898781;
-    --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10); --wash: rgba(255,255,255,0.05);
-    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767; --selected: rgba(57,135,229,0.16); --well: #0a0a09;
-  --t-call: #2ea043; --t-output: #8fd19e; --t-gatherer: #f2cc3a;
-  --term-bg: var(--surface); --term-ink: #e8e6e0; --term-dim: #8f8c84; --term-faint: #66635d; --term-user: #262522; --term-ok: #4eba65;
-  --term-err: #ff6b80; --term-run: #e8b600; --term-accent: #d97757; --term-code: #222220; --term-rule: #2e2d2a; --term-bash: #fd5db1;
-  --term-add: rgba(78,186,101,.16); --term-del: rgba(255,107,128,.16); --term-add-ink: #b6e8c0; --term-del-ink: #ffc2cb; --term-link: #7cb7ff;
-  --md-link: #3fb1c5; --md-code: #f3c7ee;
-  --hl-com: #9a978f; --hl-kw: #c7a2ff; --hl-str: #8fd19e; --hl-num: #f0a868; --hl-fn: #82b8ff; --hl-prop: #62c6d6; --hl-meta: #e3bd5f;
-  --hl-bg: color-mix(in srgb, var(--ink) 4%, var(--surface));
-  --scroll: rgba(255,255,255,.16);
-  --buddy-edge: rgba(255,255,255,.28); --buddy-edge2: transparent;
-  }
-}
+/* dark: picked, or the system's with "System" picked (the page sets data-theme either way: data.js's setTheme) */
 :root[data-theme="dark"] {
   color-scheme: dark;
   --page: #111110; --surface: #1f1f1d; --side: #121211; --side-rule: rgba(255,255,255,0.14); --ink: #ecebe7; --ink-2: #c3c2b7; --muted: #898781;
@@ -70,7 +54,7 @@ body { margin: 0; background: var(--page); color: var(--ink); font: var(--fs-bod
    (tabs.ts's bar, in #tab-slot); under it, the list's own
    edge (.side's), so the tabs read as apart from the panels under them (inside its height: nothing under it moves) */
 .topbar { flex: none; height: var(--bar-h); display: flex; align-items: center; gap: 4px; padding: 0 0 0 8px; background: var(--side);
-  border-bottom: 2px solid var(--side-rule); position: relative; z-index: 30; }   /* above the page (the terminal's own layers reach 11), so its Settings panel is too */
+  border-bottom: 2px solid var(--side-rule); position: relative; z-index: var(--z-bar); }   /* above the page (the terminal's own layers reach 11), so its Settings panel is too */
 :root.pane-mode .topbar { display: none; }
 .topbar .about-wrap { flex: none; display: flex; }
 .topbar .brand-btn { border: 0; background: none; padding: 3px; border-radius: 8px; display: inline-flex; align-items: center; gap: 7px;
@@ -148,17 +132,12 @@ body { margin: 0; background: var(--page); color: var(--ink); font: var(--fs-bod
 .cfg-note.bad { color: var(--warning); } .cfg-note.err { color: var(--critical); }
 .cfg-harnesses { display: grid; gap: 2px; font-size: var(--fs-label); color: var(--ink-2); }
 .cfg-harnesses code, .about code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--fs-label); }
-.cfg-logins, .cfg-logins-pick { display: grid; gap: 6px; }
-/* hidden, hidden: the display above would show them anyway (the picker before Chrome was read, the read button
-   when Browsers run in the user's own Chrome) */
-.cfg-logins[hidden], .cfg-logins-pick[hidden], .about .row[hidden] { display: none; }
-.cfg-logins-list { max-height: 180px; overflow: auto; display: grid; gap: 1px; padding: 4px 6px; border: 1px solid var(--ring); border-radius: 6px; background: var(--page); }
-.cfg-logins-list label { display: flex !important; align-items: center; gap: 6px; color: var(--ink); font-size: var(--fs-meta); cursor: pointer; }
-.cfg-logins-list label .n { margin-left: auto; color: var(--muted); font-size: var(--fs-label); }
+/* hidden, hidden: a row's own display would show it anyway */
+.about .row[hidden] { display: none; }
 .cfg-path { color: var(--muted); font-size: var(--fs-label); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .cfg-flag { color: var(--warning); }
 #cfg-edit { white-space: nowrap; flex: none; }
-.cfg-file { position: fixed; inset: 0; z-index: 40; background: rgba(0,0,0,.45); display: grid; place-items: center; padding: 16px; }
+.cfg-file { position: fixed; inset: 0; z-index: var(--z-modal); background: rgba(0,0,0,.45); display: grid; place-items: center; padding: 16px; }
 .cfg-file[hidden] { display: none; }
 .cfg-file-box { width: min(900px, 100%); height: min(85vh, 900px); background: var(--surface); border: 1px solid var(--ring); border-radius: 10px;
   padding: 12px 14px; display: grid; grid-template-rows: auto 1fr auto; gap: 8px; }
@@ -188,6 +167,10 @@ button:hover { background: var(--wash); }
    row, a pane's head, an app panel's corner, the files panel), bare at rest, a wash under the pointer, the selection's
    tint while on. Its × and + are icons (ICONS.x, ICONS.plus; core/ui/glyphs.ts), never the characters. */
 :root { --ib: 28px; }
+/* The page's layers, what is over what, lowest first (a component's own small z-indexes stay inside it): the list over
+   the page, the top bar, the hidden list peeking out, the minimized chat's card, the hover card, menus, notices, and a
+   dialog over everything (the Apps page's, config.toml's). */
+:root { --z-list-over: 25; --z-bar: 30; --z-list-peek: 40; --z-card: 60; --z-hover: 70; --z-menu: 72; --z-toast: 80; --z-modal: 200; }
 /* THE TYPE SCALE: five sizes, two weights (400, 600), for every word the page writes -- a label (caps, a section's or a
    count's), meta (counts, times, paths), the UI (rows, tabs, buttons, menus), the conversation, a heading. Code inside a
    line is a share of its line (em), never a size of its own; a glyph sized by its font (a state's dot, the orbit) and the
