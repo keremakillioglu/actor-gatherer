@@ -1,7 +1,9 @@
 // Playwright's `test`, with one check more on every test: the page threw no error while it ran (an error in the page's
 // script would otherwise pass unseen, its view drawn as far as it got). And after each, every agent it attached to an
 // app's instance detached again: an actor opened opens the apps it is attached to with it (its task's, 07-panes.js's
-// openTaskApps), so one a test left attached would open above a later test's view. The instances stay.
+// openTaskApps), so one a test left attached would open above a later test's view. The instances stay. Then what a
+// helper of the test's asked to have undone (`atEnd`). All of it whether the test passed or not: one that failed half
+// way must not leave the home changed under the tests after it.
 import { expect, test as base, type Locator, type Page, type WebSocketRoute } from "@playwright/test";
 
 export const test = base.extend({
@@ -9,11 +11,22 @@ export const test = base.extend({
     const errors: string[] = [];
     page.on("pageerror", (err) => errors.push(err.message));
     await use(page);
-    expect(errors, "errors thrown in the page").toEqual([]);
-    await page.unrouteAll({ behavior: "ignoreErrors" }); // a request a test's route still answers, as it ends: let go
-    await clearApps(page);
+    try {
+      expect(errors, "errors thrown in the page").toEqual([]);
+    } finally {
+      await page.unrouteAll({ behavior: "ignoreErrors" }); // a request a test's route still answers, as it ends: let go
+      await clearApps(page);
+      for (const undo of undos.splice(0).reverse()) await undo(page);
+    }
   },
 });
+
+const undos: ((page: Page) => Promise<unknown>)[] = [];
+/** What a helper changed in the home, undone after the test that called it -- as the test itself would at its end, had
+ * it got there (editor-home.ts's startEditor: its actor forgotten), and after the test's own undoing if it did. */
+export function atEnd(undo: (page: Page) => Promise<unknown>) {
+  undos.push(undo);
+}
 
 /** Every app a test opened closed, and every task it made undone: an app open is a row of the list, and an actor in a
  * task one of its row's, in the tests after it. */
