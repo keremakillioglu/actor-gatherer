@@ -7,3 +7,4 @@ from .base import Named
 class Pi(Named):
     name = "pi"
     label = "Pi"
+    edit_tools = {"edit": "path", "write": "path"}

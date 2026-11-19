@@ -866,6 +866,7 @@ class ClaudeCode(Harness):
     name = "claude"
     label = "Claude Code"
     checked_with = "2.1.310"
+    edit_tools = {n: key for n, (action, key) in TOOLS.items() if action == Action.EDIT and key}
     esc_takes_back = True            # stopped before its answer came, the message is back in its box
     queue_ends_with_process = True   # its queue is in memory: what it held as its process ended is never sent
     asks_shown_again = False         # resumed, it keeps no call left unanswered (2.1.319): no dialog, its box empty
