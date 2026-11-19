@@ -28,7 +28,7 @@ import {
 import { dismissNotice, openNotice } from "../notify/notify.js";
 import { TASK_KINDS, chatAtEnd, chatToEnd, permissionVerb } from "../chat/chat.js";
 import { tildePath } from "../../core/page/code.js";
-import { firstLine, plural } from "../transcript/transcript.js";
+import { firstLine, plural } from "../../core/format";
 import { FILE_KINDS, showKept } from "../chat/files-view.js";
 import { enc } from "../history/history.js";
 import { actorLogo } from "../apps/app-actors.js";

@@ -1,6 +1,5 @@
-// Times, counts and words as the page says them: the same as the old page's helpers (src/core/page/helpers.js's full,
-// ago, spell, lasting; features/transcript/transcript.js's plural, firstLine), which stay there for the old page until it goes. Times are
-// the server's, in seconds.
+// Times, counts, sizes and words as the page says them, for every view (the old page's modules import them too). Times
+// are the server's, in seconds.
 
 /** A whole number with its thousands marked ("1,204"); a dash for none. */
 export const full = (v: number | null | undefined): string =>
@@ -41,3 +40,46 @@ export const spell = (s: number): string => {
 
 /** How long since `t`, as a clock counting up (spell). */
 export const lasting = (t: number): string => spell(Date.now() / 1000 - t);
+
+/** A count made short: "950", "1.2K", "34K", "1.5M", "12M"; a dash for none. */
+export const compact = (v: number | null | undefined): string =>
+  v === null || v === undefined
+    ? "–"
+    : v >= 1e6
+      ? (v / 1e6).toFixed(v >= 1e7 ? 0 : 1).replace(/\.0$/, "") + "M"
+      : v >= 1e3
+        ? (v / 1e3).toFixed(v >= 1e5 ? 0 : 1).replace(/\.0$/, "") + "K"
+        : String(Math.round(v));
+
+/** Dollars: "$1.20", "<$0.01" for less than a cent; a dash for none. */
+export const usd = (v: number | null | undefined): string =>
+  v === null || v === undefined ? "–" : v > 0 && v < 0.01 ? "<$0.01" : "$" + v.toFixed(2);
+
+/** The time `t` on a chart's axis: its day too, over `days`; its seconds, if `seconds`. */
+export const axisTime = (t: number, days?: boolean, seconds?: boolean): string =>
+  new Date(t * 1000).toLocaleString(
+    [],
+    days
+      ? { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }
+      : seconds
+        ? { hour: "2-digit", minute: "2-digit", second: "2-digit" }
+        : { hour: "2-digit", minute: "2-digit" },
+  );
+
+/** The time `t` on the clock (to the second), or its day and minute `withDate`; a dash for none. */
+export const clock = (t: number | null | undefined, withDate?: boolean): string =>
+  t
+    ? new Date(t * 1000).toLocaleString(
+        [],
+        withDate
+          ? { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }
+          : { hour: "2-digit", minute: "2-digit", second: "2-digit" },
+      )
+    : "–";
+
+/** How long from `a` to `b`: "45s", "2.5m", "1.2h"; a dash without both. */
+export const span = (a: number | null | undefined, b: number | null | undefined): string => {
+  if (!a || !b) return "–";
+  const s = Math.max(0, b - a);
+  return s < 60 ? `${s.toFixed(0)}s` : s < 3600 ? `${(s / 60).toFixed(1)}m` : `${(s / 3600).toFixed(1)}h`;
+};

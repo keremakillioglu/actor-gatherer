@@ -1,4 +1,5 @@
 import { el } from "./helpers.js";
+import { startClocks } from "../ui/clocks";
 import { ansiHtml, codeClick, guessWeb, hlLines, hlPart, langOfPath, outputHtml, shellHtml, tildePath } from "../ui/highlight";
 
 // ------------------------------------------------------------------ code, coloured
@@ -9,6 +10,7 @@ const shellSpan = (text) => { const s = el("span", { class: "sh-t" }); s.innerHT
 
 // What this module did as the page's script ran, in that order: page.js runs it once every module is loaded.
 export function start() {
+  startClocks();                                     // every count-up time on the page set each second (core/ui/clocks.ts)
   // a code block's Copy (codeFence's, callView's): the command as written (data-copy), else the block's own text; its
   // Fold and Show all
   document.addEventListener("click", (ev) => codeClick(ev));

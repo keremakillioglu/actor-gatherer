@@ -14,7 +14,7 @@ import {
   actorPanes, closeAppPane, closePop, noHarness, openPop, railNewBox, retarget, rowPop, savePanes, startCwd, startable,
   swapAppPane,
 } from "../layout/panes.js";
-import { plural } from "../transcript/transcript.js";
+import { plural } from "../../core/format";
 import { appRole } from "../apps/app-actors.js";
 import * as appHost from "../apps/host";
 

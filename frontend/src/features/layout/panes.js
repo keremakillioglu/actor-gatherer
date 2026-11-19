@@ -21,7 +21,7 @@ import { drawNewTab, keptHarness, keptStart, tabKey } from "./new-tab.js";
 import { escapeShown } from "../page/main-view.js";
 import { askKey, askWhere } from "../chat/chat.js";
 import { tildePath } from "../../core/page/code.js";
-import { firstLine, plural } from "../transcript/transcript.js";
+import { firstLine, plural } from "../../core/format";
 import { CHAT_VIEWS, CHAT_VIEW_KEY, chatView, setChatView } from "../chat/views.js";
 import { term } from "../terminal/terminal.js";
 import { minRedraw, topChanged } from "./top.js";

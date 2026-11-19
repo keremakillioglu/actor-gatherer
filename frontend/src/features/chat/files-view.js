@@ -11,7 +11,8 @@ import { TASK_KINDS, answeredNote, askingNote, errorNote } from "./chat.js";
 import {
   ansiHtml, guessWeb, hlLines, hlPart, langOfPath, outputHtml, shellHtml, shellSpan, tildePath,
 } from "../../core/page/code.js";
-import { firstLine, memoryFolders, plural, str } from "../transcript/transcript.js";
+import { memoryFolders, str } from "../transcript/transcript.js";
+import { firstLine, plural } from "../../core/format";
 import { CHAT_FEEDS, CHAT_VIEWS, addChatView, chatView, offeredViews, setChatView } from "./views.js";
 import { MIN_TIP, canMinimize, setChatMin, topShown } from "../layout/top.js";
 import { appWordsOf } from "../apps/app-actors.js";

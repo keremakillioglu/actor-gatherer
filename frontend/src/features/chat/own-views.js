@@ -6,7 +6,9 @@ import { statusOf } from "../list/seen.js";
 import {
   askingNote, backgroundNote, columns, contextCard, contextItem, errorNote, sizeCard, typeChips,
 } from "./chat.js";
-import { firstLine, foldedOutput, markdown, notesSwitch, plural, transcriptBlocks } from "../transcript/transcript.js";
+import { foldedOutput, notesSwitch, transcriptBlocks } from "../transcript/transcript.js";
+import { markdown } from "../../core/ui/md";
+import { firstLine, plural } from "../../core/format";
 import { addChatView } from "./views.js";
 import { actorLogo } from "../apps/app-actors.js";
 

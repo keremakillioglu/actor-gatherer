@@ -26,7 +26,7 @@ import {
 } from "../layout/panes.js";
 import { refreshNewTab } from "../layout/new-tab.js";
 import { TASK_KINDS } from "../chat/chat.js";
-import { firstLine, plural } from "../transcript/transcript.js";
+import { firstLine, plural } from "../../core/format";
 import { shownGone } from "../terminal/shell.js";
 import * as appHost from "../apps/host";
 
