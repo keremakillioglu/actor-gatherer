@@ -67,7 +67,10 @@ describe("the layout model's tabs", () => {
   });
 
   it("⌥+click takes a task from another tab to be the tab shown's alone, that tab gone if left empty", () => {
-    const l = take({ ...two(), tabs: [two().tabs[0], { ...two().tabs[1], tasks: ["g\u0000c2"] }] }, "g\u0000c2");
+    const l = open(
+      take({ ...two(), tabs: [two().tabs[0], { ...two().tabs[1], tasks: ["g\u0000c2"] }] }, "g\u0000c2"),
+      "g\u0000c2",
+    );
     expect([l.tabs.map((t) => t.id), shown(l)]).toEqual([["a"], ["g\u0000c2"]]);
   });
 

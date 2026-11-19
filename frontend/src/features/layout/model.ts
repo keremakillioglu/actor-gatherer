@@ -6,6 +6,7 @@
 //
 // Step 1 of 4: the model and its rules, as tabs.ts and the old page's rememberTask have them, with the migration from
 // the six keys. Not wired yet.
+import type { Cell } from "./tab-map";
 import type { Node } from "./tree";
 
 export interface Tab {
@@ -21,6 +22,8 @@ export interface Tab {
   draft?: string;
   /** a page of the dashboard's it shows in place of its new-tab page, holding no task: "apps" */
   page?: string;
+  /** its panels as they were last laid out, for its map on the bar (tab-map.ts) */
+  map?: Cell[];
 }
 
 export interface TaskTab {
@@ -153,12 +156,13 @@ export function pick(l: Layout, task: string): Layout {
  * -- one left with tasks, something typed, or a page is shown as it was left (tabs.ts's start). */
 export const opened = (l: Layout, task: string): Layout => (holds(shownTab(l)) ? l : open(l, task));
 
-/** ⌥+click: the task out of every other tab (one left holding nothing, gone), to be the tab shown's alone. */
+/** ⌥+click: the task out of every other tab (one left holding nothing, gone) -- to be the tab shown's alone once the
+ * page enters it (open). */
 export function take(l: Layout, task: string): Layout {
   const tabs = l.tabs
     .map((t) => (t.id === l.current ? t : { ...t, tasks: t.tasks.filter((k) => k !== task) }))
     .filter((t) => t.id === l.current || holds(t));
-  return open({ ...l, tabs }, task);
+  return { ...l, tabs };
 }
 
 /** Tab `id` closed (not the only one): the tab shown closed, the next shown (else the one before). */
@@ -241,6 +245,13 @@ export function move(l: Layout, id: string, at: number): Layout {
 }
 
 export const rename = (l: Layout, id: string, name: string): Layout => withTab(l, id, (t) => ({ ...t, name }));
+/** The tab shown's arrangement and the task in focus, as the page has them now. */
+export const noted = (l: Layout, screen: Node | null, focus: string | null): Layout =>
+  withTab(l, l.current, (t) => ({ ...t, screen, focus }));
+/** Tab `id`'s map, as its panels were last laid out. */
+export const mapped = (l: Layout, id: string, map: Cell[]): Layout => withTab(l, id, (t) => ({ ...t, map }));
+/** The tab shown showing a page of the dashboard's in place of its new-tab page. */
+export const setPage = (l: Layout, page: string): Layout => withTab(l, l.current, (t) => ({ ...t, page }));
 /** What tab `id`'s new-tab page's box holds now ("": none). */
 export const setDraft = (l: Layout, text: string, id = l.current): Layout =>
   withTab(l, id, (t) => {
@@ -318,6 +329,7 @@ export function migrate(get: (k: string) => string | null): Layout {
           focus: t.focus ?? null,
           ...(t.draft ? { draft: t.draft } : {}),
           ...(t.page ? { page: t.page } : {}),
+          ...(Array.isArray(t.map) ? { map: t.map } : {}),
         })),
         current: tabs.some((t) => t.id === kept?.current) ? (kept!.current as string) : tabs[0].id,
         tasks: {},
