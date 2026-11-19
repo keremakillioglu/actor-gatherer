@@ -1,4 +1,4 @@
-import { MAX_PANES, PANE, PANES_KEY, SNAPSHOT, panes, state } from "../../core/page/state.js";
+import { MAX_PANES, PANE, SNAPSHOT, panes, state } from "../../core/page/state.js";
 import {
   HUE_MAIN, ICONS, MAC, el, gathererNamed, get, harnessBadge, harnessInfo, harnessLogo, harnessName, isShell, key,
   parseKey, post, runnableNames, runsHere, selectedInfo, shellOf, shellPath, signature, strokeIcon, taskId,
@@ -950,18 +950,15 @@ function paneNote(text) {
 }
 function savePanes() {
   if (PANE || SNAPSHOT) return;
-  try {
-    if (!panes.others.length) localStorage.removeItem(PANES_KEY);
-    else localStorage.setItem(PANES_KEY, JSON.stringify({ here: state.selected, size: panes.here.size, focus: panes.others.indexOf(panes.focus),
-      others: panes.others.map((p) => ({ g: p.g, c: p.c, view: p.view, size: p.size })) }));
-  } catch (e) { /* this page only */ }
+  shadow.update(model.keptPanes, !panes.others.length ? null : { here: state.selected, size: panes.here.size,   // (the layout
+    focus: panes.others.indexOf(panes.focus), others: panes.others.map((p) => ({ g: p.g, c: p.c, view: p.view, size: p.size })) });  // model's)
+  shadow.persist();
 }
 // The panes kept, opened again once the home is known: those whose actors are still in it.
 function restorePanes() {
   panes.checked = true;
   if (PANE || SNAPSHOT) return;
-  let kept = null;
-  try { kept = JSON.parse(localStorage.getItem(PANES_KEY)); } catch (e) { /* none kept */ }
+  const kept = shadow.now().panes;                  // (the layout model's: model.ts)
   if (!kept || !Array.isArray(kept.others)) return;
   const exists = (g, c) => isShell(c) ? (state.home.shells || []).some((s) => s.id === c && s.gatherer === g)
     : state.home.gatherers.some((x) => x.name === g && x.agents.some((a) => a.channel === c));
@@ -989,8 +986,7 @@ function panesTake(name, data) {
 // one opens the actor it is attached to below it, in the pane in focus (one open already: its pane focused). Its head
 // and its iframe are made by features/apps/host.ts (window.agNext.apps); what its panel asks goes through it to the
 // dashboard's /api/apps; the actor in focus (appsSelected) and the theme are told to it. The panels open are kept in
-// this browser (TOP_APPS_KEY), opened again once the apps are known (restoreAppPanes).
-const TOP_APPS_KEY = "ag-dashboard-top-apps";
+// this browser (the layout model's `apps`: model.ts), opened again once the apps are known (restoreAppPanes).
 const topRowEl = () => document.getElementById("top-row");
 function topLayout() {
   for (const p of panes.apps) p.node.style.flexGrow = String(p.size);
@@ -1189,11 +1185,9 @@ async function appsAtWork() {
 }
 function saveAppPanes() {
   if (PANE || SNAPSHOT) return;
-  try {
-    if (!panes.apps.some((p) => !p.held)) localStorage.removeItem(TOP_APPS_KEY);
-    else localStorage.setItem(TOP_APPS_KEY, JSON.stringify({
-      apps: panes.apps.filter((p) => !p.held).map((p) => ({ app: p.app.name, instance: p.instance.id, g: p.instance.gatherer, size: p.size })) }));
-  } catch (e) { /* this page only */ }
+  shadow.update(model.keptApps, panes.apps.filter((p) => !p.held)   // (the layout model's: model.ts)
+    .map((p) => ({ app: p.app.name, instance: p.instance.id, g: p.instance.gatherer, size: p.size })));
+  shadow.persist();
 }
 // The actor an app's instance is attached to, shown below it: in the pane in focus, unless one of them is open in a
 // pane already (that pane focused). None attached: the panes as they are.
@@ -1290,10 +1284,9 @@ function appsSelected() {
 // as the panes kept them (restorePanes), not opened again for them.
 async function restoreAppPanes() {
   if (PANE || SNAPSHOT) return;
-  let kept = null;
-  try { kept = JSON.parse(localStorage.getItem(TOP_APPS_KEY)); } catch (e) { /* none kept */ }
-  if (!kept || !Array.isArray(kept.apps)) return;
-  for (const o of kept.apps) {
+  const kept = shadow.now().apps;                   // (the layout model's: model.ts)
+  if (!Array.isArray(kept)) return;
+  for (const o of kept) {
     const app = o && window.agNext.apps.named(o.app);
     if (!app || panes.apps.some((p) => p.instance.id === o.instance)) continue;
     const inst = await window.agNext.apps.instanceOf(o.app, o.g, o.instance);

@@ -59,10 +59,28 @@ export interface TaskLayout {
   at: number;
 }
 
+/** The page's panes as it last showed them (panes.js's savePanes): the actor in its own pane, the others beside, the one
+ * in focus, each one's size and view -- opened again at a reload once the home is known. */
+export interface PanesKept {
+  here: [string, string] | null;
+  size?: number;
+  focus?: number;
+  others: { g: string; c: string; view?: string; size?: number }[];
+}
+/** The apps' panels the page last showed above its panes (saveAppPanes), opened again once the apps are known. */
+export interface AppKept {
+  app: string;
+  instance: string;
+  g: string;
+  size?: number;
+}
+
 export interface Layout {
   tabs: Tab[];
   current: string;
   tasks: Record<string, TaskLayout>;
+  panes?: PanesKept;
+  apps?: AppKept[];
 }
 
 export const KEY = "ag-dashboard-layout";
@@ -252,6 +270,21 @@ export function move(l: Layout, id: string, at: number): Layout {
 }
 
 export const rename = (l: Layout, id: string, name: string): Layout => withTab(l, id, (t) => ({ ...t, name }));
+/** The page's panes, and the apps' panels above them, as it shows them now (none: none beside its own pane; none). */
+export const keptPanes = (l: Layout, panes: PanesKept | null): Layout => {
+  const out = { ...l };
+  if (panes) out.panes = panes;
+  else delete out.panes;
+  return out;
+};
+export const keptApps = (l: Layout, apps: AppKept[] | null): Layout => {
+  const out = { ...l };
+  if (apps && apps.length) out.apps = apps;
+  else delete out.apps;
+  return out;
+};
+/** The tab shown's arrangement, as the work area has it now. */
+export const setScreen = (l: Layout, screen: Node | null): Layout => withTab(l, l.current, (t) => ({ ...t, screen }));
 /** The tab shown's arrangement and the task in focus, as the page has them now. */
 export const noted = (l: Layout, screen: Node | null, focus: string | null): Layout =>
   withTab(l, l.current, (t) => ({ ...t, screen, focus }));
@@ -387,8 +420,15 @@ export function renameTaskTab(l: Layout, key: string, id: string, name: string):
 
 // ---- kept in this browser: one key (KEY), or, before it, the six keys of before -- read once, then dropped
 
-/** The keys of before this file's KEY held what it holds now (the panes', the top apps', the screen's still read). */
-export const OLD_KEYS = ["ag-dashboard-screen-tabs", "ag-dashboard-task-layouts-2", "ag-dashboard-task-trees"];
+/** The keys of before this file's KEY: what it holds now. */
+export const OLD_KEYS = [
+  "ag-dashboard-screen-tabs",
+  "ag-dashboard-task-layouts-2",
+  "ag-dashboard-task-trees",
+  "ag-dashboard-screen",
+  "ag-dashboard-panes",
+  "ag-dashboard-top-apps",
+];
 
 /** The layout kept: KEY's, if readable; else made from the keys of before (migrate). */
 export function load(get: (k: string) => string | null): Layout {
@@ -403,9 +443,8 @@ export function load(get: (k: string) => string | null): Layout {
     typeof kept.tasks === "object"
   )
     return {
-      tabs: kept.tabs,
+      ...kept,
       current: kept.tabs.some((t) => t.id === kept.current) ? kept.current : kept.tabs[0].id,
-      tasks: kept.tasks,
     };
   return migrate(get);
 }
@@ -420,8 +459,8 @@ const read = (get: (k: string) => string | null, k: string): unknown => {
 
 /** The layout the six keys of before held: the screen tabs (ag-dashboard-screen-tabs, the tab shown's arrangement in
  * ag-dashboard-screen), what each task was left with (ag-dashboard-task-layouts-2) and its trees and tabs
- * (ag-dashboard-task-trees). The tab shown's panes and app panels (ag-dashboard-panes, -top-apps) are what its tasks
- * open, so they are not read; with no tabs kept, the page opens as it does on a fresh home. */
+ * (ag-dashboard-task-trees), the page's panes and the apps' panels above them (ag-dashboard-panes, -top-apps); with no
+ * tabs kept, the page opens as it does on a fresh home. */
 export function migrate(get: (k: string) => string | null): Layout {
   const kept = read(get, "ag-dashboard-screen-tabs") as { tabs?: Tab[]; current?: string } | null;
   const tabs = (kept?.tabs || []).filter((t) => t && typeof t.id === "string" && Array.isArray(t.tasks));
@@ -441,6 +480,10 @@ export function migrate(get: (k: string) => string | null): Layout {
         tasks: {},
       }
     : empty();
+  const panes = read(get, "ag-dashboard-panes") as PanesKept | null;
+  if (panes && Array.isArray(panes.others)) l.panes = panes;
+  const apps = read(get, "ag-dashboard-top-apps") as { apps?: AppKept[] } | null;
+  if (apps && Array.isArray(apps.apps) && apps.apps.length) l.apps = apps.apps;
   const screen = read(get, "ag-dashboard-screen") as Node | null;
   const here = shownTab(l);
   if (screen && !here.screen) here.screen = screen;
