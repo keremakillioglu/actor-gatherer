@@ -11,7 +11,7 @@ import { addItem, keepSizes, leaves, move, remove, swap, toSide, type Side, type
 import { type Put } from "./blocks";
 import { APP, build, FOLD_UNDER, TOP_BAND, type Built, type Old, type Shown } from "./build";
 import { Cards, withBlocks } from "./cards";
-import { canMin, foldable, folded, idOf, Mins, minimized } from "./mins";
+import { canMin, foldable, idOf, marked, Mins, together } from "./mins";
 import { Mover } from "./move";
 import { Placer } from "./place";
 import * as M from "./model";
@@ -184,7 +184,6 @@ export class Work {
       node: (id) => this.last?.nodes.get(id) ?? null,
       resized: (key, sizes, done) => this.resized(key, sizes, done),
       inset: () => ({ top: (this.tabs.height() || WELL) + PAD, right: IN, bottom: IN, left: IN }),
-      fitted: (id) => !!this.last?.minimized.has(id),
       folds: (key, kid) => (foldable(this.last, key, kid).length ? FOLD_UNDER : null),
       fold: (key, kid, on) => this.fold(key, kid, on),
       placed: () => {
@@ -343,23 +342,29 @@ export class Work {
     return { id: EMPTY };
   }
 
-  // PANES MINIMIZED, each on its own (mins.ts): only its message box, where something is above or below it
+  // PANES MINIMIZED (mins.ts): only their message boxes, where something is above or below them -- panes side by side
+  // together
   /** Whether a pane is minimized now. */
   isMin(node: HTMLElement): boolean {
     return this.mins.has(node);
   }
-  /** Whether a pane can be minimized: something of its task, or another task, above or below it. */
+  /** Whether a pane can be minimized: something of its task, or another task, above or below it (no app beside it). */
   canMin(node: HTMLElement): boolean {
     return canMin(this.last, node);
   }
-  /** A pane minimized, or shown whole again: kept in its task's arrangement (the tab shown). */
+  /** A pane minimized, or shown whole again, with the panes beside it: kept in their tasks' arrangements (the tabs
+   * shown). */
   setMin(node: HTMLElement, on: boolean): void {
-    this.arrange(idOf(this.last, node), (t, item) => minimized(t, [item], on));
+    const id = idOf(this.last, node);
+    if (id) this.setMins(together(this.last, id, on), on);
   }
-  // kid `kid` of a split minimized, or shown whole again, by its bar dragged (place.ts): each of its panes, in its task's
-  // arrangement (the bar between tasks: each task's)
+  // kid `kid` of a split minimized, or shown whole again, by its bar dragged (place.ts): each of its panes
   private fold(key: string, kid: number, on: boolean): void {
-    for (const [task, t] of folded(this.last, key, kid, on, (k) => this.tasks.tree(k))) this.tasks.set(task, t);
+    this.setMins(foldable(this.last, key, kid), on);
+  }
+  // panes `ids` minimized, or shown whole: each in its task's arrangement (panes of two tasks: each task's)
+  private setMins(ids: string[], on: boolean): void {
+    for (const [task, t] of marked(this.last, ids, on, (k) => this.tasks.tree(k))) this.tasks.set(task, t);
     this.tasks.save();
     this.place();
   }

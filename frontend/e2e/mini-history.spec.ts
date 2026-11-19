@@ -151,8 +151,7 @@ test("a minimized pane's line between its box and its last lines, dragged: the r
   await addNotepad(page, taskRow(page));
   await expect(notes(page)).toHaveCount(1);
   const frame = other(page).frameLocator("iframe");
-  await minimize(page).click(); // this page's own pane (Codex)
-  await minimize(frame).click(); // the one in a frame (Claude)
+  await minimize(page).click(); // this page's own pane (Codex), and the one beside it in a frame (Claude) with it
   const strip = page.locator("#main > .chat.mini"),
     fstrip = frame.locator("#main > .chat.mini");
   const widths = async (s: Locator) => [
