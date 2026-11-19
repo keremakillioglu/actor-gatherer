@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import app_kit  # noqa: E402
 from ag_dashboard import access, app_agents, app_host, server, task_links, tasks, tool_gateway  # noqa: E402
-from app_kit import Instance  # noqa: E402
+from app_kit import Caller, Instance  # noqa: E402
 from test_dashboard import HomeBase  # noqa: E402
 from test_dashboard_app_host import insert_here  # noqa: E402
 
@@ -43,10 +43,13 @@ class ManifestTest(unittest.TestCase):
 
     def test_both_open_files_by_link_a_path_written_with_no_app_in_files(self):
         files, latex = (app_kit.load(os.path.join(ROOT, "ag_apps", n)) for n in ("files", "latex"))
-        self.assertEqual([(k.form, k.paths) for k in files.links], [(app_kit.links.FILE_FORM, True)])
+        self.assertEqual([(k.form, k.paths) for k in files.links], [(app_kit.links.FILE_FORM, True),
+                                                                     ("folder/<path...>", False)])
         self.assertEqual([(k.form, k.paths) for k in latex.links], [(app_kit.links.FILE_FORM, False)])
         self.assertEqual(files.to_dict()["links"][0]["paths"], True)       # as the page reads it
         self.assertIn("ag://files/file/", files.told())                   # every agent of the group told how
+        self.assertIn("ag://files/folder/", files.told())                 # and how to link a folder
+        self.assertEqual(files.links[1].match("folder/Users/me/app/src"), {"path": "Users/me/app/src"})
         base = {"name": "a", "label": "A", "version": "1", "panel": {"entry": "index.html"}}
         with self.assertRaises(app_kit.ManifestError):                    # `paths`: for the file form only
             app_kit.parse({**base, "links": [{"form": "page/<id>", "paths": True}]})
@@ -219,6 +222,24 @@ class PlainTest(HomeBase):
         self.assertEqual(self.text(), {"version": None, "missing": True})
         status, _ = self.at("/api/edit/put", "POST", {"path": self.file, "root": "/", "text": "back\n", "base": None})
         self.assertEqual(status, 200)                            # Save restores a file deleted on disk
+
+    def test_a_folder_is_said_to_be_one_and_shown_by_files_open(self):
+        """A link to a folder (or a plain path an agent wrote to one) is shown in the panel's tree: edit/about says it is a
+        folder, and files_open shows one too, at no line."""
+        src = os.path.join(self.root, "src")
+        os.mkdir(src)
+        status, got = self.at(f"/api/edit/about?path={urllib.parse.quote(src)}&root=/")
+        self.assertEqual((status, got["kind"], got["real"]), (200, "folder", src))
+        self.assertEqual(self.at(f"/api/edit/about?path={urllib.parse.quote(self.file)}&root=/")[1]["kind"], "text")
+        host = self.httpd.app_host
+        with unittest.mock.patch.object(host, "panels_of", return_value=1), \
+                unittest.mock.patch.object(host, "tell") as told:
+            shown = host.call("files", self.inst, "open", {"path": src + "/", "line": 7}, Caller(gatherer="g"))
+            missing = host.call("files", self.inst, "open", {"path": src + "/gone"}, Caller(gatherer="g"))
+        self.assertFalse(shown.is_error, shown.content)
+        self.assertEqual(told.call_args.args[1], {"show": {"path": src, "line": 0}})   # a folder has no lines
+        self.assertTrue(missing.is_error)
+        self.assertIn("no such file or folder", missing.content[0]["text"])
 
     def test_the_listing_s_writers_are_those_of_the_window_asked(self):
         from ag_dashboard import livedocs

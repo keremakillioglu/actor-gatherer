@@ -19,11 +19,15 @@
   ag.selection.on((sel) => { state.selected = sel ? [sel.gatherer, sel.channel] : null; });
   ag.intents.on("open-file", (d) => { if (d && d.path) edShowFile(String(d.path), Number(d.line) || 0); });
   // a link to a file clicked in Chat (the app's [[links]], `ag://<app>/file/<its absolute path>#L<line>`): shown, at
-  // its line -- the path absolute, whether or not the link keeps its first "/"
+  // its line -- the path absolute, whether or not the link keeps its first "/" -- and one to a folder (the Files app's
+  // `folder/<path...>`), or a file's link to one, shown in the tree
   ag.links.onOpen((l) => {
-    const p = String((l && l.values && l.values.path) || "");
+    const linked = String((l && l.values && l.values.path) || "");
+    const path = linked.startsWith("/") ? linked : `/${linked}`;
     const line = /^L?(\d+)$/i.exec(String((l && l.part) || ""));
-    if (p) edShowFile(p.startsWith("/") ? p : `/${p}`, line ? Number(line[1]) : 0);
+    if (!linked) return;
+    if (l.form === "folder/<path...>") edShowFolder(path);
+    else edShowFile(path, line ? Number(line[1]) : 0);
   });
   ag.onMessage((m) => {                              // its backend's: the mode set (here or elsewhere), a file to show
     if (m && m.mode) { ed.mode = m.mode; edHead(); }

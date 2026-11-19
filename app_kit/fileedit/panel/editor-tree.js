@@ -425,7 +425,10 @@ function edTree() {
   edRove();
   if (ed.revealing) {
     const r = ed.tree.querySelector(`.ed-row[data-path="${CSS.escape(ed.revealing)}"]`);
-    if (r) { ed.revealing = null; r.scrollIntoView({ block: "nearest" }); }
+    if (r) {
+      ed.revealing = null; r.scrollIntoView({ block: "nearest" });
+      if (ed.flashFolder === r.dataset.path) { ed.flashFolder = null; r.classList.add("flash"); }   // edShowFolder's
+    }
   }
 }
 // One row in the tab order (a tree's way): the one last focused, else the file open's, else the first.

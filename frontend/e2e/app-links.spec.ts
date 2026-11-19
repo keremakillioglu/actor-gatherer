@@ -3,6 +3,7 @@
 // openAppLink), which is handed the link (the SDK's ag.links.onOpen). The test app is Notepad (tests/apps/notepad/),
 // whose [[links]] take `note/<n>`. Its instance is left open, as apps.spec.ts leaves it; its panel closed.
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import type { Page } from "@playwright/test";
 import { closePanel, expect, test } from "./test";
@@ -140,6 +141,51 @@ test("a file's path an agent writes opens in the Files app open in the group, at
   await expect(page.locator("#pane-here")).toBeVisible(); // the actor still below it
   await page.request.post("/api/apps/close", { data: { gatherer: GATHERER, instance: editor } });
   await page.request.post("/api/apps/close", { data: { gatherer: GATHERER, instance: theirs } });
+});
+
+test("a link to a folder, or a path to one, shows it opened in the Files app's tree, the file open left open", async ({
+  page,
+}) => {
+  const { repo } = project();
+  const notes = path.join(repo, "docs", "notes"),
+    lib = path.join(repo, "lib"),
+    keep = path.join(repo, "keep.txt");
+  for (const dir of [notes, lib]) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(notes, "a.md"), "a\n");
+  fs.writeFileSync(path.join(lib, "b.py"), "b = 1\n");
+  fs.writeFileSync(keep, "keep\n");
+  const outside = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "ag-folder-link-")));
+  fs.mkdirSync(path.join(outside, "inner"));
+  fs.writeFileSync(path.join(outside, "inner", "c.txt"), "c\n");
+  const opened = await page.request.post("/api/apps/open", {
+    data: { app: "files", gatherer: GATHERER, folder: repo },
+  });
+  const files = ((await opened.json()) as { id: string }).id;
+  await openActor(page, CLAUDE);
+  await (await says(page, "said-f1", `[keep.txt](${keep})`)).click();
+  const panel = editorPanel(page),
+    row = (p: string) => panel.locator(`.ed-row[data-path="${p}"]`);
+  await expect(panel.locator(".ed-head .ed-path")).toContainText("keep.txt");
+  // the folder form: the folders down to it opened, its row flashed, what is in it listed
+  await (await says(page, "said-f2", `[notes](ag://files/folder${notes})`)).click();
+  await expect(row(path.join(repo, "docs"))).toHaveAttribute("aria-expanded", "true");
+  await expect(row(notes)).toHaveAttribute("aria-expanded", "true");
+  await expect(row(notes)).toHaveClass(/flash/);
+  await expect(row(path.join(notes, "a.md"))).toBeVisible();
+  await expect(panel.locator(".ed-head .ed-path")).toContainText("keep.txt"); // the file still open
+  // a path an agent wrote, to a folder: the same, not opened as a file
+  await (await says(page, "said-f3", `In [lib/](${lib}/).`)).click();
+  await expect(row(lib)).toHaveAttribute("aria-expanded", "true");
+  await expect(row(path.join(lib, "b.py"))).toBeVisible();
+  await expect(panel.locator(".ed-head .ed-path")).toContainText("keep.txt");
+  await expect(panel.locator(".ed-head")).not.toContainText("is not a file");
+  // a folder outside the one shown: the tree moved to the folder holding it, it opened there
+  await (await says(page, "said-f4", `[inner](ag://files/folder${path.join(outside, "inner")})`)).click();
+  await expect(row(path.join(outside, "inner"))).toHaveAttribute("aria-expanded", "true");
+  await expect(row(path.join(outside, "inner", "c.txt"))).toBeVisible();
+  await expect(row(lib)).toHaveCount(0);
+  expect(await instances(page, "files")).toEqual([files]); // no other Files app made
+  await page.request.post("/api/apps/close", { data: { gatherer: GATHERER, instance: files } });
 });
 
 test("a relative path from an actor with no folder opens nothing and says why", async ({ page }) => {
