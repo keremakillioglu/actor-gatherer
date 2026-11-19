@@ -268,9 +268,14 @@ def resolve(row: dict, name: str, args: dict) -> Tuple[str, str, Instance, dict]
 
 
 def _none_yours(gatherer: str, m) -> str:
+    from . import app_policy                                    # (it reads the home's config: here when needed)
     held = access.holders(gatherer, m.name)
-    return (f"{m.label}: you may use none of its instances. One is yours to use once it is in your task: the user puts "
-            f"one in it from the dashboard (\"+\" on your row, or dragging it onto your row). "
+    joins = app_policy.of(m) == "join"
+    how = ("One is yours to use once it is in your task: the user puts one in it from the dashboard (\"+\" on your "
+           "row, or dragging it onto your row). " if joins else
+           "The user has set it not to be put in an actor's task, so none can be yours unless they change that on "
+           "the dashboard's Apps page. ")
+    return (f"{m.label}: you may use none of its instances. " + how
             + (f"Open in your group: {'; '.join(held)}." if held else "None is open in your group."))
 
 

@@ -293,6 +293,20 @@ class RecordedTest(GathererBase):
                 self.assertEqual(self.actor(None)["answer"]["call"], "t1")
         self.assertEqual(len(reads), 1)
 
+    def test_the_record_s_result_is_read_once_for_each_answer(self):
+        """The home asks what became of each session's answer on every read, closed sessions too: the record's result,
+        once there, is the one it keeps (`Record`), so it is not read again."""
+        sent = {"call": "permission:0a1b", "summary": "Allowed", "expect": [], "at": time.time()}
+        self.assertIsNone(data.answer_result("g", "s1", "permission:0a1b"))   # not settled yet: asked again next time
+        self.add([("ask_settled", {"call": "permission:0a1b", "how": "answered", "result": "Allowed"}, None)])
+        self.assertEqual(self.actor(sent)["answer"]["result"], "Allowed")
+        reads = []
+        real = data.record_of
+        with unittest.mock.patch.object(data, "record_of", lambda *a: reads.append(a) or real(*a)):
+            for _ in range(3):                                       # each read of the home asks it again
+                self.assertEqual(data.answer_result("g", "s1", "permission:0a1b"), "Allowed")
+        self.assertEqual(reads, [])
+
     def test_kept_in_the_gatherer_it_outlasts_the_dashboard_that_typed_it(self):
         sent = {"call": "t1", "summary": "Which color? → Blue", "expect": ['"Which color?"="Blue"'], "at": time.time()}
         self.add([("answer_given", {"at": sent["at"], **{k: sent[k] for k in ("call", "summary", "expect")}}, None)])

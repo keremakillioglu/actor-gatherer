@@ -28,7 +28,7 @@ from ag.ag_harness.store import paths  # noqa: E402
 from ag.cli import apps as apps_cli  # noqa: E402
 from ag.cli.main import PYLIB  # noqa: E402
 from ag.cli.pylib import agapps  # noqa: E402
-from ag_dashboard import access, app_host, data, server, task_links, tasks, tool_gateway  # noqa: E402
+from ag_dashboard import access, app_host, app_settings, data, server, task_links, tasks, tool_gateway  # noqa: E402
 import app_kit  # noqa: E402
 from app_kit import AppError, Caller  # noqa: E402
 from channels import ch  # noqa: E402
@@ -904,6 +904,42 @@ class ServedTest(HostBase):
         self.assertEqual(tasked(), {})
         self.assertEqual(self.api("POST", "/api/apps/attach", {"gatherer": "g", "instance": "nope", "channel": "c2"})[0],
                          404)
+
+    def test_what_adding_an_app_to_an_actor_or_a_task_does_is_the_user_s_to_choose(self):
+        """app_policy.py through the routes: the apps listed as the user chose (on the Apps page: /api/apps/settings); an
+        app that doesn't join tasks, opened for an actor, only opened, and refused into a task; one with any number
+        opened again at its folder (`reuse`)."""
+        write_app(self.apps_dir, "book", book_toml("per-folder", "task"), BOOK)
+        shelf = (book_toml("many", "group").replace("book", "shelf").replace("Book", "Shelf")
+                 .replace('access = "group"', 'access = "group"\non_task = "folder"'))
+        write_app(self.apps_dir, "shelf", shelf, BOOK.replace("book.added", "shelf.added"))
+        self.httpd.app_host.find()
+        on_task = lambda: {a["name"]: a["on_task"] for a in self.api("GET", "/api/apps?gatherer=g")[1]["apps"]}  # noqa: E731
+        self.assertEqual(on_task(), {"book": "join", "far_notes": "no", "notes": "no", "shelf": "folder"})
+        self.assertEqual(self.api("POST", "/api/apps/settings", {"app": "book", "on_task": "folder"}),
+                         (200, {"on_task": "folder"}))
+        self.assertEqual(on_task()["book"], "folder")
+        status, got = self.api("POST", "/api/apps/settings", {"app": "notes", "on_task": "join"})
+        self.assertEqual(status, 400)                                     # a group app is in no task
+        self.assertIn("one of folder, no", got["error"])
+        _, book = self.api("POST", "/api/apps/open", {"app": "book", "gatherer": "g", "folder": self.folder,
+                                                      "channel": "c1"})
+        self.assertEqual(tasks.of("g")["tasked"], {})                     # only opened: in no task, none attached
+        self.assertEqual(self.httpd.app_host.agents_of(self.httpd.app_host.instance("g", book["id"])), [])
+        status, got = self.api("POST", "/api/tasks", {"gatherer": "g", "do": "add", "to": "c1",
+                                                      "items": ["app:" + book["id"]]})
+        self.assertEqual(status, 400)
+        self.assertIn("Book isn't added to a task", got["error"])
+        self.assertEqual(self.api("POST", "/api/apps/settings", {"app": "book", "on_task": "join"})[0], 200)
+        with open(app_settings.path()) as fh:
+            self.assertEqual(json.load(fh), {})                           # its own again: no choice kept
+        self.api("POST", "/api/apps/open", {"app": "book", "gatherer": "g", "folder": self.folder, "channel": "c1"})
+        self.assertEqual(set(tasks.of("g")["tasked"]), {"c1", "app:" + book["id"]})
+        at = lambda reuse: self.api("POST", "/api/apps/open", {"app": "shelf", "gatherer": "g", "folder": self.folder,  # noqa: E731
+                                                               "reuse": reuse})[1]["id"]
+        first = at(True)
+        self.assertEqual(at(True), first)                                 # the one open there
+        self.assertNotEqual(at(False), first)                             # any number: a new one
 
     def test_an_app_in_its_own_process_reaches_the_host_with_its_token(self):
         status, inst = self.api("POST", "/api/apps/open", {"app": "far_notes", "gatherer": "g",

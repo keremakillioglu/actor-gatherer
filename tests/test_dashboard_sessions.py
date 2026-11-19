@@ -614,6 +614,24 @@ class ChatTerminalTest(SessionsBase):
             began.append(True)
             self.until(lambda: "[got ESC]" in self.screen(sid))
 
+    def test_a_terminal_is_registered_with_the_message_it_starts_with_already_on_it(self):
+        """A reader that does not take the lock (`type`'s `_unsent`, for a stop key) finds a new terminal with what it was
+        started with on it from the moment it is in `terms`: its message, and when that was given on its command line.
+        Looked at here in the first step after it is registered (its status set)."""
+        sid = self.s.create("g", self.work)["session_id"]
+        seen = []
+        set_status = self.s._set
+
+        def watched(session_id, **values):
+            t = self.s.terms.get(session_id)
+            if t is not None and values.get("status") == "terminal":
+                seen.append((t.prompt, t.prompted > 0, t.typed > 0))
+            return set_status(session_id, **values)
+        with unittest.mock.patch.object(self.s, "_set", side_effect=watched):
+            self.s.send(sid, "hello")
+            self.until(lambda: "fake terminal" in self.screen(sid))
+        self.assertEqual(seen[:1], [("hello", True, True)])
+
     def test_its_turn_has_begun_once_its_first_call_is_recorded(self):
         sid = self.s.create("g", self.work)["session_id"]
         self.s.send(sid, "hello")
