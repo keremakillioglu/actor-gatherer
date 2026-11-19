@@ -53,7 +53,7 @@ What it decides, codex's own:
 
 Then one model call through routing (ag/integrations/tools/ag_orchestrator/call_ag.py) with codex's
 adaptor (adaptor/adaptor.py, or the one named by the `adaptor` option), each
-gatherer with a context manager server of its own (ag_clients.py). None when
+gatherer with a context manager server of its own (ag_orchestrator/ag_clients.py). None when
 the context manager could not answer, or its context is codex's input as it
 was. Options (given by the hook server's --option): `adaptor`, the adaptor
 class as `module:Class`; `cwd`, the working directory when a request states
@@ -65,7 +65,6 @@ codex's rollout of it is followed, and what it says recorded as events of the th
 session_files.py) -- as the Claude Code hook does its record.
 """
 
-import importlib
 import json
 import os
 import sys
@@ -77,11 +76,11 @@ from harness_kit.codex import (METADATA, TRIGGER, TURN, compaction_split, cwd_of
                                is_model_call, metadata_of, side_call, texts_of, thread_of)  # its calls, as this module had them
 
 from ag.integrations.tools.ag_connection.ag_client import AgClient
-from ag.integrations.tools.ag_orchestrator.adaptor import CHANNEL, Adaptor
+from ag.integrations.tools.ag_orchestrator.adaptor import CHANNEL, Adaptor, load_adaptor
 from ag.integrations.tools.ag_orchestrator.call_ag import call_ag, preamble_of, read_of
 from ag.integrations.tools.ag_orchestrator.proxy_hook import ProxyHook
 from ag.integrations.tools.ag_orchestrator.file_touches import Files
-from .ag_clients import AgClients
+from ag.integrations.tools.ag_orchestrator.ag_clients import AgClients
 from .counting import Counter
 from ..adaptor.adaptor import CodexAdaptor
 
@@ -90,15 +89,6 @@ FILES = "codex_files"         # the same, for what the answer's calls do to file
 SIDE = "codex_side"                   # the same, for a side call whose answer is kept: (kind, gatherer, thread)
 KEPT = ("thread_title", "system")     # the side calls whose answers are kept: a title, a recap
 NAME_CHARS = 120                      # the longest name kept (codex asks for 36 characters at most)
-
-
-def load_adaptor(spec: str) -> Adaptor:
-    """An adaptor from its class's "module:Class"."""
-    module, _, attr = spec.partition(":")
-    cls = getattr(importlib.import_module(module), attr)
-    if not (isinstance(cls, type) and issubclass(cls, Adaptor)):
-        raise TypeError(f"{spec} is not an Adaptor")
-    return cls()
 
 
 def answer_object(answer: dict) -> dict:

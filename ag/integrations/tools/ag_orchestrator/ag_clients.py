@@ -1,5 +1,5 @@
-"""A context manager server per gatherer, for the hooks behind the hook server (codex's and
-Claude Code's), which serve many gatherers at once: each gatherer gets a client of its own
+"""A context manager server per gatherer, for the hooks behind the hook server (every harness's: proxy_hook.py's
+subclasses), which serve many gatherers at once: each gatherer gets a client of its own
 (ag/integrations/tools/ag_connection/ag_client.py), started on its first request and kept. Within
 it, the server runs each session's requests in a lane of its own (ag/ag_harness/server/), so a read
 that waits for a background build (up to the policy's `sync_seconds`) holds up only its own session.

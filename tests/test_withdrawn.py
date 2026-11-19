@@ -22,7 +22,7 @@ from ag.ag_harness.store import operations as store  # noqa: E402
 from ag.ag_harness.store import paths, schema  # noqa: E402
 from ag.ag_interface import Event  # noqa: E402
 from ag.integrations.harnesses.claude.ag_orchestrator import context_manager as claude_ag  # noqa: E402
-from ag.integrations.harnesses.codex.ag_orchestrator.ag_clients import AgClients  # noqa: E402
+from ag.integrations.tools.ag_orchestrator.ag_clients import AgClients  # noqa: E402
 from ag.integrations.tools.ag_orchestrator.call_ag import HUNG_UP  # noqa: E402
 from ag.integrations.tools.ag_orchestrator.proxy_hook import process_ended  # noqa: E402
 

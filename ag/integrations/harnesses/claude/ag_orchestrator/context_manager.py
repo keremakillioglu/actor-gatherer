@@ -100,8 +100,8 @@ from harness_kit.claude import (AGENT_HEADER, COMPACTION, RECAP, REQUEST_CLASS_H
                                 cwd_of, is_model_call, is_subagent, is_web_search, recap_at,  # calls, as this module
                                 request_class, session_of, suggestion_at)  # had them
 
-from ag.integrations.harnesses.codex.ag_orchestrator.ag_clients import AgClients
-from ag.integrations.harnesses.codex.ag_orchestrator.context_manager import load_adaptor
+from ag.integrations.tools.ag_orchestrator.ag_clients import AgClients
+from ag.integrations.tools.ag_orchestrator.adaptor import load_adaptor
 from ag.integrations.tools.ag_connection.ag_client import AgClient
 from ag.integrations.tools.ag_orchestrator.adaptor import CHANNEL, Adaptor
 from ag.integrations.tools.hook_server.hook_server import Answer

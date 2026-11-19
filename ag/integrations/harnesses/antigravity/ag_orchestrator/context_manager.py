@@ -21,7 +21,7 @@ What it decides, by Antigravity's rules (harness_kit/antigravity.py):
 
 Then one model call through routing (ag/integrations/tools/ag_orchestrator/call_ag.py) with Antigravity's adaptor
 (adaptor/adaptor.py, or the one named by the `adaptor` option), each gatherer with a context manager server of its
-own (codex's ag_clients.py). None when the context manager could not answer, or its context is agy's contents as they
+own (ag_orchestrator/ag_clients.py). None when the context manager could not answer, or its context is agy's contents as they
 were. Options (the hook server's --option): `adaptor`, `cwd`, and `files` ("on" or "off"), as codex's hook takes
 them.
 
@@ -49,8 +49,8 @@ from typing import Callable, Dict, Optional, Set, Tuple, Union
 from harness_kit import Antigravity, CallKind, Fact, Facts, Kind
 from harness_kit.antigravity import answer_start, with_instructions
 
-from ag.integrations.harnesses.codex.ag_orchestrator.ag_clients import AgClients
-from ag.integrations.harnesses.codex.ag_orchestrator.context_manager import load_adaptor
+from ag.integrations.tools.ag_orchestrator.ag_clients import AgClients
+from ag.integrations.tools.ag_orchestrator.adaptor import load_adaptor
 from ag.integrations.tools.ag_connection.ag_client import AgClient
 from ag.integrations.tools.ag_orchestrator.adaptor import CHANNEL, Adaptor
 from ag.integrations.tools.ag_orchestrator.call_ag import call_ag, preamble_of
