@@ -48,22 +48,29 @@ export function AgSettings({ closePanel }: AgSettingsProps) {
   if (!s) return null;
   return (
     <>
-      <h3>ag</h3>
+      {/* under the panel's "ag" heading (frontend/index.html) */}
       <ModelForm key={`m${rev}`} s={s} closePanel={closePanel} />
-      <DefaultsForm key={`d${rev}`} s={s} />
+      {/* seldom changed: folded, so the panel fits a window without scrolling */}
+      <details className="cfg-more cfg-group">
+        <summary>
+          <span className="tw" aria-hidden="true" />
+          Group defaults
+        </summary>
+        <DefaultsForm key={`d${rev}`} s={s} />
+      </details>
       <div>
         <h4>Harnesses</h4>
         <Harnesses s={s} />
       </div>
+      {/* the file's path in its tooltip: the home it is in is said once, at the panel's foot */}
       <div className="row">
         <span className="cfg-path" id="cfg-path" title={s.path}>
-          {s.path}
+          All of ag's settings
         </span>
-        <button type="button" id="cfg-edit" onClick={() => void useSettings.getState().openFile()}>
+        <button type="button" id="cfg-edit" title={s.path} onClick={() => void useSettings.getState().openFile()}>
           Edit config.toml…
         </button>
       </div>
-      <h3>This page</h3>
       {createPortal(<ConfigFile />, document.body)}
     </>
   );
@@ -171,12 +178,15 @@ function ModelForm({ s, closePanel }: { s: Settings; closePanel: () => void }) {
       <h4>Gatherer model</h4>
       <div className="row">
         <ModelInput value={model} onChange={setModel} />
-        <button className="primary" type="submit" disabled={busy}>
+        <button type="submit" disabled={busy}>
           Set
         </button>
       </div>
       <details className="cfg-more" open={!!(s.llm.api_base || s.llm.key_env) || undefined}>
-        <summary>API base and key (LiteLLM models only)</summary>
+        <summary>
+          <span className="tw" aria-hidden="true" />
+          API base and key (LiteLLM models only)
+        </summary>
         <label>
           API base
           <input
@@ -230,7 +240,6 @@ function DefaultsForm({ s }: { s: Settings }) {
         })
       }
     >
-      <h4>Group defaults</h4>
       <label>
         Policy
         <select id="cfg-policy" value={policy} onChange={(ev) => setPolicy(ev.target.value)}>

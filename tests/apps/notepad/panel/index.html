@@ -72,6 +72,7 @@
   ag.onMessage((m) => { $("said").textContent = m && m.said ? m.said : JSON.stringify(m); });
   ag.intents.on("open-file", (d) => { $("intent").textContent = `open-file ${d.path}`; });
   ag.notices.onOpen((where) => { $("intent").textContent = `notice ${JSON.stringify(where)}`; });
+  ag.links.onOpen((l) => { $("intent").textContent = ["link", l.form, JSON.stringify(l.values), l.part].filter(Boolean).join(" "); });
   $("remind").addEventListener("click", async () => {
     const text = $("text").value.trim() || (document.querySelector("li:last-child") || {}).firstChild?.textContent || "";
     await ag.api(`remind?after=5&text=${encodeURIComponent(text)}`, { method: "POST" });

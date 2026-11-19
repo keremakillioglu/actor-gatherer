@@ -561,6 +561,8 @@ class PaperNewsApp(App):
                     return Response.json({"papers": self.store.saved()})
                 if path == "search":
                     return Response.json({"papers": self.store.search(str(query.get("q") or ""))})
+                if path == "paper":                         # where a link to one opens it: its day's listing
+                    return Response.json({"day": self.store.day_of(str(query.get("id") or ""))})
             if method == "POST":
                 ask = json.loads(body or b"{}")
                 if not isinstance(ask, dict):

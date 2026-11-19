@@ -117,7 +117,7 @@ function ntLine(p) {
   const chip = (key, label, value, title, open, extra = {}) => el("button", { type: "button", class: "nt-chip", "data-pop": key,
     title, "aria-haspopup": open ? "menu" : undefined, "aria-expanded": open ? String(rowPop.key === key) : undefined,
     ...(open ? { onclick: (ev) => { if (rowPop.key === key) return closePop(); open(ev.currentTarget); } } : { disabled: "" }), ...extra },
-    el("span", { class: "lbl", text: label }), ...value, open ? el("span", { class: "caret", "aria-hidden": "true", text: "▾" }) : null);
+    el("span", { class: "lbl", text: label }), ...value, open ? el("span", { class: "caret down", "aria-hidden": "true", text: "▾" }) : null);
   return [
     chip("nt:in", "In", [el("span", { class: "val", text: placeName(p) })],
       p ? (p.alone ? "On its own · shares context with no group" : `Start in ${placeName(p)}`) : "Make a group first with the folder button at the top of the list",
@@ -179,8 +179,8 @@ function ntDirBox(p) {
 function ntApps(p, found) {
   const g = ntGroup(p), alone = !!(p && p.alone), off = !p || alone || !!newTab.busy;
   const tooled = startable().filter((h) => (harnessInfo(h) || {}).mcp);
-  const plain = found.filter((a) => !a.failed);
-  const agented = tooled.length ? found.filter((a) => a.agent && a.agent.offered && !a.failed) : [];
+  const plain = found.filter((a) => !a.failed).sort(byLabel);   // the order a group's "+ ⋯" menu has (07-panes.js)
+  const agented = tooled.length ? found.filter((a) => a.agent && a.agent.offered && !a.failed).sort(byLabel) : [];
   const why = alone ? "Apps open in a group. Pick one under In." : !p ? "Make a group first" : "";
   const button = (mark, label, title, run) => el("button", { type: "button", class: "nt-app", title: why || title, ...(off ? { disabled: "" } : {}),
     onclick: () => void ntRun(label, run) }, mark, el("span", { text: label }));

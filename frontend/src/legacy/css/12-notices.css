@@ -9,7 +9,7 @@
 
 /* a card's notifications: the newest first, those not yet seen in the ink, the others dimmed; each opening the app */
 .actor-card .c-notices { display: grid; gap: 1px; padding-top: 4px; border-top: 1px solid var(--grid); }
-.actor-card .c-nhead { font-size: 11px; color: var(--muted); padding: 2px 0; }
+.actor-card .c-nhead { font-size: var(--fs-label); color: var(--muted); padding: 2px 0; }
 .actor-card .c-notice { display: flex; align-items: flex-start; gap: 2px; }
 .actor-card .c-notice .c-row { flex: 1 1 auto; min-width: 0; align-items: flex-start; }
 .actor-card .c-notice .status { margin-top: 4px; }
@@ -36,10 +36,10 @@
 .pop .pop-dot.notified { background: var(--notice); }
 .pop .pop-dot.asking { background: var(--warning); }
 .pop .pop-dot.error { background: var(--critical); }
-.pop .pop-tx { display: grid; gap: 1px; min-width: 0; font-size: 12.5px; line-height: 1.35; }
+.pop .pop-tx { display: grid; gap: 1px; min-width: 0; font-size: var(--fs-ui); line-height: 1.35; }
 .pop .pop-tx b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pop .pop-line { color: var(--ink-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.pop .pop-where { color: var(--muted); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pop .pop-where { color: var(--muted); font-size: var(--fs-meta); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pop .pop-x { flex: none; display: grid; place-items: center; width: 24px; height: 24px; margin: 4px 2px 0 0; padding: 0; border: 0; border-radius: 6px;
   background: none; color: var(--muted); cursor: pointer; }
 .pop .pop-x:is(:hover, :focus-visible) { background: var(--wash); color: var(--ink); outline: none; }

@@ -607,11 +607,33 @@ Keys: j / k the next or previous paper, s save it, o open its arXiv page, Enter 
     }
   });
   ag.notices.onOpen((where) => { if (where && where.day) open({ type: "day", day: where.day, tab: "for" }); });
+  // A link to it clicked in Chat (app.toml's [[links]]): a day's listing, all of it; a paper, in the listing of the day
+  // it was in -- picked, as j/k pick one, and scrolled to. Before the state is read: once it is.
+  let linked = null, started = false;
+  async function openLinked(l) {
+    const v = (l && l.values) || {};
+    let day = v.day || null;
+    if (v.id) day = await get(`paper?id=${encodeURIComponent(v.id)}`).then((r) => r.day).catch(() => null);
+    if (!day) return flash(v.id ? `No paper ${v.id} in the days kept` : "No such day");
+    await open({ type: "day", day, tab: "all" });
+    if (!v.id) return;
+    let i = filtered().findIndex((p) => p.id === v.id);
+    if (i < 0) { S.kind = "all"; i = filtered().findIndex((p) => p.id === v.id); }
+    if (i < 0) return;
+    S.shown = Math.max(S.shown, i + 1);
+    S.at = i;
+    drawMain();
+    const item = document.querySelector(`.pp[data-id="${CSS.escape(v.id)}"]`);
+    if (item) { item.scrollIntoView({ block: "center" }); item.focus({ preventScroll: true }); }
+  }
+  ag.links.onOpen((l) => { if (started) openLinked(l); else linked = l; });
 
   await loadState();
+  started = true;
   const v = S.view;
   const kept = (S.state?.days || []).map((d) => d.day);
-  if (!told()) open({ type: "interests" });
+  if (linked) openLinked(linked);                        // opened by a link: there, not where it was left
+  else if (!told()) open({ type: "interests" });
   else if (v && (v.type === "saved" || v.type === "search" || v.type === "interests" || (v.type === "day" && kept.includes(v.day)))) open(v);
   else if (latestDay()) open({ type: "day", day: latestDay(), tab: "for" });
   else drawMain();

@@ -40,11 +40,15 @@ test("a folder's × asks first, closes it into its gatherer's closed line, its b
     const ask = page.locator("#agents .f-ask");
     const closedLine = page.locator("#agents .fold-line", { hasText: "closed" });
     await line.hover();
-    await expect(line.locator(".folder-act")).toHaveClass([/new/, /rename/, /delete/, /close/]);
-    await expect(line.locator(".folder-act.delete")).toHaveAttribute(
-      "title",
-      "Delete Paper · its contents move up a level",
-    );
+    // "+", "⋯" (a new folder, rename, delete) and its ×
+    await expect(line.locator(".f-acts .act:not(.crew)")).toHaveClass([/new-actor/, /row-more/, /close/]);
+    await line.locator(".act.row-more").click();
+    await expect(page.locator(".row-menu[role=menu] [role=menuitem] .nm")).toHaveText([
+      "New folder",
+      "Rename",
+      "Delete",
+    ]);
+    await page.keyboard.press("Escape");
 
     // the Codex actor in it idle and saved: asked first, Cancel in focus; Esc takes it back, nothing done
     await line.locator(".folder-act.close").click();

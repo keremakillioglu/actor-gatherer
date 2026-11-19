@@ -422,12 +422,16 @@ const ICONS = {
   home: "M2.25 7.25 8 2.5l5.75 4.75M3.75 6v7.25h3.1V9.75h2.3v3.5h3.1V6",   // the rail's root: every gatherer
   reload: "M13.25 8a5.25 5.25 0 1 1-1.54-3.71M13.25 2.5v3h-3",
   plus: "M8 3.25v9.5M3.25 8h9.5",
+  x: "M4.5 4.5l7 7M11.5 4.5l-7 7",                                     // close: every ×, never the character
   play: "M5 3.25v9.5L12.75 8z",                                        // run: the Editor's preview
   minimize: "M4 5.5 8 9.5l4-4M3 12.75h10",                             // the chat minimized under the Editor: down to a line
   restore: "M4 10.5 8 6.5l4 4M3 3.25h10",                              // and shown again: up from it
   move: "M8 2v12M2 8h12M6 4l2-2 2 2M6 12l2 2 2-2M4 6 2 8l2 2M12 6l2 2-2 2",   // a pane moved, dragged by it: four ways
   takeOut: "M9 2.75h3.25v10.5H9M10.25 8H3m2.5-2.75L2.75 8l2.75 2.75",  // out of its task: an arrow leaving a box
 };
+// A fold's mark: the chevron every fold shows (00-base.css), turned down while open. Its character stays for its words
+// ("▸ 2 closed"), the chevron drawn over it.
+const foldMark = (open) => el("span", { class: open ? "caret open" : "caret", "aria-hidden": "true" }, open ? "▾" : "▸");
 // A circled cross: end the dashboard's own idle agent for a session, which then shows Closed.
 function closeIcon() {
   const svg = svgEl("svg", { viewBox: "0 0 16 16", width: 12, height: 12, "aria-hidden": "true", fill: "none", stroke: "currentColor",

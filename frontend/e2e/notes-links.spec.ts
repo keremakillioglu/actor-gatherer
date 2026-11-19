@@ -1,9 +1,10 @@
 // Links to pages in the Notes app (ag_apps/notes/): "[[" in a line, or "Link to a page" in the / menu, puts a link to
 // another page there -- one found by its title, or a new one made inside this page. The link shows the page as it is
-// now (renamed, in the trash, gone), opens it when clicked, and agents read and write it as [its title](page:<id>).
+// now (renamed, in the trash, gone), opens it when clicked, and agents read and write it as
+// [its title](ag://notes/page/<id>) -- the link to the page (app_kit/links.py) that opens it from Chat too.
 import type { FrameLocator, Page } from "@playwright/test";
 import { expect, test } from "./test";
-import { open } from "./home";
+import { CLAUDE, GATHERER, open, openActor } from "./home";
 import { binPage, call, newPage, openNotes } from "./notes-home";
 
 const read = async (page: Page, instance: string, title: string) =>
@@ -28,7 +29,7 @@ test("[[ links a line to another page, shown as that page is now, and a click op
   await kb.type("later"); // the caret after the link, and the space put after it
   await expect
     .poll(() => read(page, instance, "Index"))
-    .toMatch(new RegExp(`\\] See \\[Target\\]\\(page:${target}\\) later`));
+    .toMatch(new RegExp(`\\] See \\[Target\\]\\(ag://notes/page/${target}\\) later`));
   await expect(panel.locator(".pop")).toBeHidden();
 
   // renamed (here by an agent): the link says its new title
@@ -43,7 +44,7 @@ test("[[ links a line to another page, shown as that page is now, and a click op
   await kb.type("!");
   await expect
     .poll(() => read(page, instance, "Index"))
-    .toMatch(new RegExp(`- back to \\[Target page\\]\\(page:${target}\\)!$`));
+    .toMatch(new RegExp(`- back to \\[Target page\\]\\(ag://notes/page/${target}\\)!$`));
   await kb.press("Backspace");
   await kb.press("Backspace");
   await expect(panel.locator(".blk[data-type=bullet] .tx")).toHaveText("back to ");
@@ -83,7 +84,7 @@ test("Link to a page in the / menu makes a new page inside this one, linked", as
   await expect(row(panel, "Child notes")).toHaveAttribute("style", /--d: ?1/); // under Parent in the sidebar, shown
   await expect
     .poll(() => read(page, instance, "Parent"))
-    .toMatch(/\] \[Child notes\]\(page:[a-z0-9]{8}\) ?\n\nSubpages: Child notes \([a-z0-9]{8}\)$/);
+    .toMatch(/\] \[Child notes\]\(ag:\/\/notes\/page\/[a-z0-9]{8}\) ?\n\nSubpages: Child notes \([a-z0-9]{8}\)$/);
   await panel.locator(".blk a.pg").click();
   await expect(panel.locator("#title")).toHaveText("Child notes");
   await expect(panel.locator("#crumbs")).toHaveText("Parent/Child notes");
@@ -111,6 +112,32 @@ test("/page makes a new page inside this one, links it where it was typed, and o
   await expect(panel.locator(".blk .tx").first()).toContainText("Plan: "); // what was typed before it, kept
   await expect
     .poll(() => read(page, instance, "Project"))
-    .toMatch(/\] Plan: \[Milestones\]\(page:[a-z0-9]{8}\) ?\n\nSubpages: Milestones \([a-z0-9]{8}\)$/);
+    .toMatch(/\] Plan: \[Milestones\]\(ag:\/\/notes\/page\/[a-z0-9]{8}\) ?\n\nSubpages: Milestones \([a-z0-9]{8}\)$/);
   await binPage(panel, "Project");
+});
+
+test("a link to a page, clicked in an actor's Chat, opens Notes at that page and line", async ({ page }) => {
+  await openActor(page, CLAUDE);
+  const opened = await page.request.post("/api/apps/open", {
+    data: { app: "notes", gatherer: GATHERER, folder: null },
+  });
+  const instance = ((await opened.json()) as { id: string }).id;
+  const made = (await call(page, instance, "add", { title: "Linked from Chat", markdown: "first\nsecond\nthird" }))
+    .text;
+  const id = /\(page ([a-z0-9]{8})\)/.exec(made)![1];
+  const line = /\[([a-z0-9]{8})\] second/.exec(made)![1];
+  // the agent's reply, as Chat draws it (core/ui/md.ts)
+  await page.locator("#pane-here").evaluate((here, md) => {
+    const ag = (window as unknown as { agNext: { ui: { markdown: (t: string) => HTMLElement } } }).agNext;
+    const box = ag.ui.markdown(md);
+    box.id = "said-notes";
+    Object.assign(box.style, { position: "absolute", left: "40px", top: "60px", zIndex: "50" });
+    here.append(box);
+  }, `Added it to [the page](ag://notes/page/${id}#${line}).`);
+  await page.locator("#said-notes a.ag-link").click();
+  const panel = page.locator("#top-row > .app-pane[data-app=notes]").frameLocator("iframe");
+  await expect(panel.locator("#title")).toHaveText("Linked from Chat");
+  await expect(panel.locator(`.blk[data-id="${line}"]`)).toHaveClass(/\bflash\b/);
+  await expect(page.locator("#pane-here")).toBeVisible(); // above the actor's Chat
+  await binPage(panel, "Linked from Chat");
 });

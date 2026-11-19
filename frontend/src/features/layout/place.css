@@ -14,11 +14,8 @@
 .work.placed > .lay-well {
   display: block;
   position: absolute;
-  top: 6px; /* the tabs' bar in the page's top bar (tabs.ts), over it */
-  left: 6px;
-  right: 6px;
-  bottom: 6px;
-  border-radius: 10px;
+  inset: 0; /* the whole work area (work.ts's WELL): the cards 6px in from its sides */
+  border-radius: 0;
   background: var(--well);
   pointer-events: none;
 }
@@ -54,11 +51,11 @@
   border: 1px dashed var(--axis);
   border-radius: 8px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--fs-ui);
 }
 .lay-empty > strong {
   color: var(--ink-2);
-  font-size: 14px;
+  font-size: var(--fs-body);
   font-weight: 600;
 }
 .work.placed > :where(.top-row, .panes) {
@@ -187,7 +184,7 @@
   align-items: center;
   gap: 8px;
   padding: 0 6px 0 9px;
-  font-size: 12.5px;
+  font-size: var(--fs-ui);
   color: var(--ink);
   background: color-mix(in srgb, var(--ink) 6%, var(--surface));
   border-bottom: 1px solid var(--ring);
@@ -199,7 +196,7 @@
 .lay-grip {
   flex: none;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-label);
   letter-spacing: -2px;
 }
 .lay-sname {
@@ -215,7 +212,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-meta);
 }
 .lay-sright {
   flex: none;
@@ -244,7 +241,7 @@
   border-radius: 5px;
   cursor: pointer;
   color: var(--ink-2);
-  font-size: 12px;
+  font-size: var(--fs-meta);
 }
 .lay-ttab > span {
   overflow: hidden;
@@ -256,7 +253,7 @@
 .lay-ttab[aria-selected="true"] {
   background: color-mix(in srgb, var(--ink) 14%, var(--surface));
   color: var(--ink);
-  font-weight: 500;
+  font-weight: 600;
 }
 .lay-tclose,
 .lay-tadd {
@@ -264,17 +261,18 @@
   border: 0;
   background: none;
   padding: 0 4px;
-  font-size: 13px;
+  font-size: var(--fs-ui);
   line-height: 1;
   color: var(--muted);
   border-radius: 4px;
 }
 .lay-tadd {
-  width: 24px;
-  height: 24px;
+  width: var(--ib);
+  height: var(--ib);
   padding: 0;
-  font-size: 16px;
-  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
 }
 .lay-tclose:hover,
 .lay-tadd:hover {
@@ -340,6 +338,19 @@
   height: 100%;
   background: none;
 }
+/* a phone's width (nothing placed: the page flows, 07-panes.js): the tabs still there, a row that scrolls sideways, each
+   tab no narrower than its map and a few letters */
+@media (max-width: 760px) {
+  :root:not(.list-full):has(.work) .tab-slot > .lay-tabs {
+    display: flex;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .tab-slot .lay-tab {
+    flex: none;
+    width: 150px;
+  }
+}
 .lay-tab-list {
   position: relative; /* its tabs' offsets its own: where a tab dragged along it would go (bar-drag.ts's slotAt) */
   min-width: 0;
@@ -359,17 +370,20 @@
     transition: none;
   }
 }
+/* every tab the same width (Chrome's way): a crowded bar shrinks them alike, so a short name keeps as much of itself
+   as a long one -- never each by its own width, which left a short name almost nothing past its fixed map */
 .lay-tab {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
-  max-width: 280px;
-  flex: 0 1 auto;
+  width: 220px; /* its share of the list's own width too (a basis alone does not size the list) */
+  flex: 0 1 220px;
   height: 32px;
   box-sizing: border-box;
   padding: 0 4px;
-  font-size: 12.5px;
+  font-size: var(--fs-ui);
   color: var(--ink-2);
   cursor: pointer;
   user-select: none;
@@ -380,7 +394,8 @@
   background: var(--wash);
   color: var(--ink);
 }
-/* the tab shown: a tint, its map ringed -- never a raised tab joined to what is under it, as a browser's */
+/* the tab shown: the selection's tint, as a list row's -- no ring on its map, never a raised tab joined to what is under
+   it, as a browser's */
 .lay-tab[aria-selected="true"] {
   background: color-mix(in srgb, var(--s1) 18%, transparent);
   color: var(--ink);
@@ -389,7 +404,7 @@
 .lay-tab:not([aria-selected="true"]) .lay-map {
   opacity: 0.85;
 }
-/* its × only while pointed at (its room kept, so nothing moves) */
+/* its × only while pointed at, over its own map: no room kept for it at rest, so the name has it */
 .lay-tab:not(:hover, :focus-within) > .lay-close {
   visibility: hidden;
 }
@@ -404,10 +419,6 @@
   border-radius: 6px;
   background: var(--well);
   --face-ring: var(--well);
-}
-.lay-tab[aria-selected="true"] .lay-map {
-  border-color: var(--s1);
-  box-shadow: 0 0 0 0.5px var(--s1);
 }
 /* a page's tab (the Apps page): its mark in the middle of its map */
 .lay-map > .lay-page {
@@ -491,30 +502,36 @@
   bottom: -4px;
 }
 .lay-close {
-  flex: none;
-  border: 0;
-  background: none;
-  padding: 2px 5px;
-  font-size: 15px;
-  font-weight: 400;
-  line-height: 1;
-  color: var(--muted);
-  border-radius: 5px;
+  position: absolute;
+  left: 4px; /* the tab's padding: exactly over its map */
+  top: 50%;
+  width: 40px;
+  height: 24px;
+  margin-top: -12px;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  border: 1px solid color-mix(in srgb, var(--ink) 22%, transparent);
+  padding: 0;
+  color: var(--ink-2);
+  background: var(--surface);
+  border-radius: 6px;
 }
 .lay-close:hover {
   color: var(--ink);
-  background: var(--wash);
+  background: color-mix(in srgb, var(--ink) 8%, var(--surface));
 }
 .lay-tab-add {
   flex: none;
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
   border: 0;
-  border-radius: 8px;
+  border-radius: 7px;
   background: none;
   color: var(--muted);
-  font-size: 18px;
-  line-height: 1;
 }
 .lay-tab-add:hover {
   color: var(--ink);
@@ -530,7 +547,7 @@
   height: 32px;
   box-sizing: border-box;
   padding: 0 12px;
-  font-size: 12.5px;
+  font-size: var(--fs-ui);
   color: var(--muted);
   border: 1px dashed var(--muted);
   border-radius: 9px;
@@ -559,14 +576,15 @@
 /* a task's card head's ×: the task closed here (its agents go on) */
 .lay-sclose {
   flex: none;
-  width: 24px;
-  height: 24px;
+  width: var(--ib);
+  height: var(--ib);
+  display: grid;
+  place-items: center;
+  padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: 7px;
   background: none;
   color: var(--muted);
-  font-size: 16px;
-  line-height: 1;
 }
 .lay-sclose:hover {
   color: var(--ink);

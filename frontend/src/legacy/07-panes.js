@@ -1055,6 +1055,8 @@ function addAppPane(app, instance, size = 1, held = false) {
   p.panel = window.agNext.apps.pane(app, instance, {
     close: () => { workClosed(p.node); closeAppPane(p); },   // its panel asking (ag.close)
     intent: (kind, data, from) => appIntent(kind, data, from.instance.gatherer),
+    openLink: (href, from) => openAppLink(from.instance.gatherer, null, href,   // ag.links.open
+      { folder: from.instance.folder, item: appItem(from.instance.id) }),
     selection: () => appsSelection(),
     agents: (g) => ((state.home && state.home.gatherers.find((x) => x.name === g)) || { agents: [] }).agents     // a gatherer's own
       .filter((a) => !a.closed && !isCoordinator(a))                                                           // agent: attached to no app
@@ -1268,14 +1270,29 @@ const webLink = (href) => {
   } catch (e) { return ""; }
 };
 const plainClick = (ev) => !ev || (!ev.button && !ev.metaKey && !ev.ctrlKey && !ev.shiftKey && !ev.altKey);
-// Whether the page takes a click on a link to `href` shown with this page's actor (a frame's: the page around it does)
-function linkClicked(href, ev) {
+const appLink = (href) => !!(window.agNext && window.agNext.apps.links.isApp(href));
+const fileLink = (href) => !!(window.agNext && window.agNext.apps.links.file(href));   // a file's path (openFileLink)
+// Whether the page takes a click on a link to `href` shown with this page's actor (a frame's: the page around it does).
+// A link to something in an app (ag://, openAppLink), or to a file -- file://, or a path in what an agent wrote (`path`:
+// one Chat drew from its words, core/ui/md.ts's data-path; not one of the dashboard's own, as /api/image?…):
+// openFileLink -- always, whatever key is held: never the browser's to open (a path, as a page of this dashboard's).
+function linkClicked(href, ev, path = false) {
+  if (appLink(href) || (fileLink(href) && (path || /^file:/i.test(String(href).trim())))) {
+    if (ev && ev.button) return true;               // another button: nothing opened (nor by the browser)
+    if (PANE) return !!(PANE.openLink && PANE.openLink(window, String(href).trim()));
+    const sel = state.selected || [];
+    openLink(sel[0] || ((state.home && state.home.gatherers[0]) || {}).name, sel[1] || null, String(href).trim());
+    return true;
+  }
   const url = webLink(href);
   if (!url || !plainClick(ev) || SNAPSHOT || !state.selected) return false;
   return PANE ? !!(PANE.openLink && PANE.openLink(window, url)) : openLink(state.selected[0], state.selected[1], url);
 }
-// `url` opened for actor `c` of `gname`, if a Browser can be given it: false, nothing done
+// `url` opened for actor `c` of `gname`, if a Browser can be given it: false, nothing done (a link to something in an
+// app: opened there, openAppLink; a file's path: in an app that shows files, openFileLink)
 function openLink(gname, c, url) {
+  if (appLink(url)) { openAppLink(gname, c, url).catch((e) => paneNote(e.message)); return true; }
+  if (fileLink(url)) { openFileLink(gname, c, url).catch((e) => paneNote(e.message)); return true; }
   const g = state.home && state.home.gatherers.find((x) => x.name === gname);
   const a = g && !isShell(c) ? actorOf(g, c) : null;
   const app = window.agNext && window.agNext.apps.named(LINK_APP);
@@ -1306,10 +1323,109 @@ async function linkInBrowser(g, a, app, url) {
   selectAppPane(p);
   p.panel.intent("open-url", { url });               // held by the panel's host until a new panel has connected
 }
+// ------------------------------------------------------------------ links to apps
+// A link to something in an app (`ag://<app>/<path>[?instance=<id>][#<part>]`, app_kit/links.py) -- clicked in an
+// actor's pane (`c`, the actor whose message it is in), or opened by a panel (the SDK's ag.links.open; `from`: its
+// instance's folder and item) -- opened in the app: its panel shown, selected, and handed the link (its `link` intent:
+// the SDK's ag.links.onOpen), which takes it there. Only a path of a form the app's manifest lists ([[links]]).
+// THE INSTANCE, the first of:
+//   1. the one the link names, if it is still open in the gatherer;
+//   2. for an actor's link, one of its task's (one attached to it: the one whose panel shows, of several);
+//   3. one whose panel is shown;
+//   4. one open in the gatherer -- one that opens here (in no task, or in this one) before one of another task, and of
+//      those one on the actor's folder (the panel's) first;
+//   5. the gatherer's for that folder, from the server: one that opens a new one only where the gatherer has none of
+//      the app (or none for the folder, of an app with one per folder) -- put in no task.
+// WHERE: its panel shown, it is selected there; else, an instance of another task, that task shown as a click on the
+// app's row shows it (05-agent-list.js's selectApp) -- as a notification of the app's is opened; else its panel opened
+// above what is shown. A click calls no tool and attaches no agent: the user only looks. What can't be opened: an error
+// saying why.
+async function openAppLink(gname, c, href, from = {}) {
+  const apps = window.agNext && window.agNext.apps, h = apps ? apps.links.parse(href) : null;
+  if (!h) throw new Error(`Not a link to anything in an app: ${href}`);
+  const app = apps.named(h.app);
+  if (!app || app.failed) throw new Error(`No app called ${h.app} here, to open ${href}`);
+  const m = apps.links.match(app.links, h.path);
+  if (!m) throw new Error(`${app.label}: no such place to open (${h.path || "nothing"})`);
+  const g = state.home && state.home.gatherers.find((x) => x.name === gname);
+  if (!g || PANE || SNAPSHOT) return;
+  const a = c && !isShell(c) ? actorOf(g, c) : null;
+  const here = a ? taskKey(gname, a.channel) : from.item ? taskKey(gname, from.item) : selectedTask();
+  const shown = (id) => panes.apps.find((q) => !q.held && q.instance.id === id);
+  const elsewhere = (id) => appTaskOf(gname, id) !== null && taskKey(gname, appItem(id)) !== here;
+  const folder = (a && cwdOf(a)) || from.folder || null;
+  let inst = null;
+  if (h.instance) {
+    inst = await apps.instanceOf(app.name, gname, h.instance);
+    if (!inst) throw new Error(`${app.label}: that one (${h.instance}) is closed`);
+  }
+  if (!inst && a) {
+    const had = (await apps.attachedTo(gname, a.channel)).filter((i) => i.app === app.name);
+    inst = had.find((i) => shown(i.id)) || had[0] || null;
+  }
+  if (!inst) {
+    const p = panes.apps.find((q) => !q.held && q.app.name === app.name && q.instance.gatherer === gname);
+    if (p) inst = p.instance;
+  }
+  if (!inst) {
+    await readApps(gname);
+    const open = gathererApps(gname).filter((o) => o.app.name === app.name);
+    const onFolder = (list) => (folder && list.find((o) => o.folder === folder)) || list[0];
+    const o = onFolder(open.filter((x) => !elsewhere(x.id))) || onFolder(open.filter((x) => elsewhere(x.id)));
+    if (o) inst = o.inst;
+  }
+  let fresh = false;
+  if (!inst) {
+    inst = await apps.open(app.name, gname, folder);
+    fresh = true;
+  }
+  let p = shown(inst.id) || null;
+  if (!p && elsewhere(inst.id)) {                    // another task's: that task shown, its panel there
+    const o = appInfo(gname, inst.id) || (await readApps(gname, true), appInfo(gname, inst.id));
+    if (!o) throw new Error(`${app.label}: closed`);
+    await selectApp(gname, o);
+    p = panes.apps.find((q) => q.instance.id === inst.id);
+    if (!p) throw new Error(`${app.label}: not shown`);
+  } else if (!p) {
+    p = panes.apps.find((q) => q.instance.id === inst.id);
+    if (!p) { p = addAppPane(app, inst); fresh = true; }
+    else if (p.held) holdAppPane(p, false);
+    saveAppPanes();
+    selectAppPane(p);
+  } else selectAppPane(p);
+  // held by the panel's host until a panel just opened has connected
+  p.panel.intent("link", { href: h.href, path: h.path, part: h.part, values: m.values, form: m.form });
+  if (fresh) await readApps(gname, true);           // the list's rows, the app now open
+}
+// A FILE'S PATH an agent wrote (features/apps/links.ts's `file`: `[parser.py](src/parser.py#L12)`, file:///…, a path its
+// terminal marks as a link) opened as a link to it (openAppLink) in an app that shows files -- one whose [[links]] take
+// `file/<path...>` (FILE_FORM): of several, one the actor has open, else the first installed. A relative path is from the
+// actor's folder (a panel's: its instance's). None installed: an error saying so.
+async function openFileLink(gname, c, href, from = {}) {
+  const apps = window.agNext && window.agNext.apps, f = apps ? apps.links.file(href) : null;
+  if (!f) throw new Error(`Not a file's path: ${href}`);
+  const g = state.home && state.home.gatherers.find((x) => x.name === gname);
+  if (!g || PANE || SNAPSHOT) return;
+  const a = c && !isShell(c) ? actorOf(g, c) : null;
+  let path = f.path;
+  if (!path.startsWith("/")) {
+    const base = (a && cwdOf(a)) || from.folder;
+    if (!base) throw new Error(`${path}: from which folder isn't known`);
+    path = apps.links.join(base, path);
+  }
+  const takers = apps.found().filter((x) => !x.failed && (x.links || []).some((l) => l.form === apps.links.FILE_FORM));
+  if (!takers.length) throw new Error(`No app here opens files, to open ${path}`);
+  let app = takers[0];
+  if (takers.length > 1 && a) {
+    const had = await apps.attachedTo(gname, a.channel);
+    app = takers.find((x) => had.some((i) => i.app === x.name)) || app;
+  }
+  await openAppLink(gname, c, apps.links.fileHref(app.name, path, f.line), from);
+}
 if (!SNAPSHOT) document.addEventListener("click", (ev) => {
   const a = ev.target instanceof Element ? ev.target.closest("a[href]") : null;
   if (!a || a.hasAttribute("download") || ev.defaultPrevented || !a.closest("#pane-here")) return;
-  if (!linkClicked(a.getAttribute("href"), ev)) return;
+  if (!linkClicked(a.getAttribute("href"), ev, a.hasAttribute("data-path"))) return;
   ev.preventDefault();
   ev.stopPropagation();                              // a link's click: not also its message's
 }, true);
@@ -1385,8 +1501,13 @@ const startAny = (gatherer, cwd, harness) => harness === SHELL_START ? startShel
   : startSession(gatherer, cwd, harness);
 const appStart = (v) => { const [name, ...h] = v.slice(APP_START.length).split(":"); return [name, h.join(":")]; };
 // The apps found that can be opened with an agent of their own (DocWriter, say): those a new actor can be started with.
+// THE APPS OFFERED, one order wherever they are listed (a group's "+ ⋯" menu, the new-tab page): each app by its name
+// (openableApps), then those that can have an agent of their own, again by name ("… with an agent": startingApps), then a
+// terminal -- "…" only on an entry that opens a box to fill in first.
+const byLabel = (x, y) => x.label.localeCompare(y.label);
+const openableApps = () => (PANE || SNAPSHOT || !window.agNext ? [] : window.agNext.apps.found()).filter((a) => !a.failed).sort(byLabel);
 const startingApps = () => (PANE || SNAPSHOT || !window.agNext ? [] : window.agNext.apps.found())
-  .filter((a) => a.agent && a.agent.offered && !a.failed);
+  .filter((a) => a.agent && a.agent.offered && !a.failed).sort(byLabel);
 const cwdOf = (a) => a.cwd || (a.session && a.session.cwd) || "";    // a session started here: its own, before any call names one
 const startCwd = (g) => cwdOf(g.agents.filter(cwdOf).sort((x, y) => (y.last || 0) - (x.last || 0))[0] || {});
 // A coordinator agent's button (CREW_START), on its node's row -- a group's, a folder's, a folder of groups', the list's
@@ -1454,38 +1575,43 @@ function startButtons(g, folder = null, prefix = "") {
   const ours = state.starting && state.starting.gatherer === g.name;
   const starting = ours && startIn.g === g.name && startIn.folder === fid ? String(state.starting.harness) : "";
   const off = state.starting ? { disabled: "" } : {};
-  const plus = () => el("span", { class: "plus", "aria-hidden": "true", text: "+" });
-  const actorKey = `${prefix}actor:${g.name}${at}`, moreKey = `${prefix}more:${g.name}${at}`;   // a card's: its own (prefix)
-  const actor = !hs.length ? el("button", { class: "act add", type: "button", disabled: "", title: noHarness(), "aria-label": noHarness() }, "+")
-    : el("button", { class: "act start new-actor" + (hs.includes(starting) ? " busy" : ""), type: "button", ...off, "data-pop": actorKey,
-      title: `New actor in ${place}${where ? ` · ${where}` : ""} · ${hs.map(harnessName).join(" or ")}`,
-      "aria-label": `New actor in ${place}`, ...(hs.length > 1 ? { "aria-haspopup": "menu", "aria-expanded": String(rowPop.key === actorKey) } : {}),
-      onclick: (ev) => {
-        aimStart(g.name, fid);
-        if (hs.length > 1) openActorMenu(g, hs, ev.currentTarget, actorKey, undefined, folder ? place : null); else addSession(g, hs[0]);
-      } },
-      plus(), strokeIcon(ICONS.agent, 16));
-  const others = moreStarts(g, hs, where, moreKey);
-  const more = others.length ? el("button", { class: "act start new-more" + (starting === SHELL_START || starting === BRANCH_START
-      || starting.startsWith(APP_START) ? " busy" : ""), type: "button", ...off, "data-pop": moreKey,
-    title: `More to start in ${place}: ${others.map((o) => o.text.replace("…", "").toLowerCase()).join(", ")}`,
-    "aria-label": `More to start in ${place}`, "aria-haspopup": "menu", "aria-expanded": String(rowPop.key === moreKey),
-    onclick: (ev) => { aimStart(g.name, fid); openMoreMenu(g, hs, ev.currentTarget, moreKey, place); } }, plus(), strokeIcon(ICONS.more, 16)) : null;
-  return [actor, more].filter(Boolean);
+  // ONE "+": everything that can start here, in one menu -- an actor on each harness, then an actor on a branch, the
+  // apps, a terminal (moreStarts) -- headed by where (the folder, else the group) and its directory. Its classes are both
+  // the old buttons' (new-actor, new-more): what started from either starts from it.
+  const key = `${prefix}start:${g.name}${at}`;   // a card's: its own (prefix)
+  const items = [...hs.map((h) => ({ mark: harnessBadge(h), text: harnessName(h), run: () => addSession(g, h) })),
+    ...(hs.length ? [{ sep: true }] : []), ...moreStarts(g, hs, where, key)];
+  if (!items.some((it) => !it.sep))
+    return [el("button", { class: "act add", type: "button", disabled: "", title: noHarness(), "aria-label": noHarness() }, strokeIcon(ICONS.plus, 16))];
+  const busy = hs.includes(starting) || starting === SHELL_START || starting === BRANCH_START || starting.startsWith(APP_START);
+  return [el("button", { class: "act start new-actor new-more" + (busy ? " busy" : ""), type: "button", ...off, "data-pop": key,
+    title: `New in ${place}${where ? ` · ${where}` : ""}`, "aria-label": `New in ${place}`, "aria-haspopup": "menu",
+    "aria-expanded": String(rowPop.key === key),
+    onclick: (ev) => { aimStart(g.name, fid); openPop(key, ev.currentTarget, popMenu(`New in ${place}`, items, where, where)); } },
+  strokeIcon(ICONS.plus, 16))];
 }
-// The "+ more" drop-down's starts: what each is, said under it, and what choosing it does. `key`: its button's data-pop.
+// A row's "⋯": what it can do besides start things (a new folder in it, rename it, hide or delete it), as a menu -- so its
+// row, hovered, shows two buttons, not six. `items`: [{icon, text, run}].
+function rowMore(key, name, items) {
+  return el("button", { class: "act row-more", type: "button", "data-pop": key, title: `More for ${name}`, "aria-label": `More for ${name}`,
+    "aria-haspopup": "menu", "aria-expanded": String(rowPop.key === key),
+    onclick: (ev) => { ev.stopPropagation(); openPop(key, ev.currentTarget, popMenu(name, items)); } }, strokeIcon(ICONS.more, 16));
+}
+// The "+ more" drop-down's starts: what each is (an app by its name and mark alone, no description under it; a branch and
+// a terminal say where they work), and what choosing it does. `key`: its button's data-pop.
 function moreStarts(g, hs, where, key = `more:${g.name}`) {
   const there = where ? `in ${where}` : "in a directory you choose";
   const tooled = hs.filter((h) => (harnessInfo(h) || {}).mcp);    // an app's agent: given its tools
   return [
     hs.length ? { icon: ICONS.branch, text: "Actor on a branch…", note: "in its own worktree, merged into the project",
       run: (button) => openBranchMenu(g, button) } : null,
+    ...openableApps().map((a) => ({ icon: ICONS.app, mark: a.mark ? appMarkImg(a) : null, text: a.label,
+      run: () => openAppTab(g.name, a.name, startCwd(g)) })),
     ...(tooled.length ? startingApps() : []).map((a) => ({ icon: ICONS.app, mark: a.mark ? appMarkImg(a) : null,
-      text: `${a.label} with an agent…`, note: a.description || "an app with its own agent",
+      text: `${a.label} with an agent…`,
       run: (button) => openPop(key, button, appStartBox(g, tooled, a)) })),
-    state.home.terminals !== false ? { icon: ICONS.terminal, text: "Terminal", note: there, run: () => addSession(g, SHELL_START) } : null,
-    ...(PANE || SNAPSHOT ? [] : window.agNext.apps.found()).filter((a) => !a.failed).map((a) => ({ icon: ICONS.app,
-      mark: a.mark ? appMarkImg(a) : null, text: a.label, note: a.description || "an app", run: () => openAppTab(g.name, a.name, startCwd(g)) })),
+    // (where it opens: the menu's heading says it)
+    state.home.terminals !== false ? { icon: ICONS.terminal, text: "Terminal", note: where ? null : there, run: () => addSession(g, SHELL_START) } : null,
   ].filter(Boolean);
 }
 // `key`: the button's data-pop (the list's "+ actor", or the rail's "+"); `start`: what a harness chosen does; `place`: the
@@ -1493,8 +1619,9 @@ function moreStarts(g, hs, where, key = `more:${g.name}`) {
 function openActorMenu(g, hs, button, key = `actor:${g.name}`, start = (h) => addSession(g, h), place = null) {
   const cwd = startCwd(g);
   const where = cwd ? tildePath(cwd, state.home.home_dir) : "";
-  openPop(key, button, popMenu(place ? `New actor in ${place}` : where ? `New actor in ${where.replace(/\/+$/, "").split("/").pop() || where}` : `New actor in ${g.name}`,
-    hs.map((h) => ({ mark: harnessBadge(h), text: harnessName(h), run: () => start(h) })), where));
+  // headed by where it goes -- the folder, else the group, as the "+ ⋯" menu's -- its directory under that
+  openPop(key, button, popMenu(`New actor in ${place || titleOf(g)}`,
+    hs.map((h) => ({ mark: harnessBadge(h), text: harnessName(h), run: () => start(h) })), where, where));
 }
 // The "+ actor" of a gatherer's or a folder's card in the rail (gathererCard, folderCard; `f` null: the gatherer's top): a
 // new actor there, as the list's "+ actor" starts one -- on the one harness at once, or on the one picked from a drop-down
@@ -1578,14 +1705,17 @@ function railNewBox(g, hs, harness = hs[0], cwd = "", error = "", alone = false)
     err);
   return box;
 }
-function openMoreMenu(g, hs, button, key = `more:${g.name}`, place = g.name) {
+function openMoreMenu(g, hs, button, key = `more:${g.name}`, place = titleOf(g)) {
   if (brPick.menu && brPick.menu.g === g.name) return brMenuClose();     // the branch drop-down it opened: pressed again
-  openPop(key, button, popMenu(`New in ${place}`, moreStarts(g, hs, startCwd(g) && tildePath(startCwd(g), state.home.home_dir), key)));
+  const dir = startCwd(g) && tildePath(startCwd(g), state.home.home_dir);
+  openPop(key, button, popMenu(`New in ${place}`, moreStarts(g, hs, dir, key), dir, dir));
 }
 // A drop-down's box: its heading, then an item for each choice -- its mark, what it is, and a note under it.
-function popMenu(head, items, title) {
-  return el("div", { class: "br-menu row-menu", role: "menu", "aria-label": head }, el("div", { class: "hd", text: head, ...(title ? { title } : {}) }),
-    ...items.map((it) => el("button", { type: "button", role: "menuitem", ...(it.depth ? { style: `padding-left: ${10 + it.depth * 14}px` } : {}), onclick: (ev) => {
+// `sub`: a second line under its heading, muted (where a new actor would work)
+function popMenu(head, items, title, sub) {
+  return el("div", { class: "br-menu row-menu", role: "menu", "aria-label": head },
+    el("div", { class: "hd", ...(title ? { title } : {}) }, head, sub ? el("span", { class: "sub", text: sub }) : null),
+    ...items.map((it) => it.sep ? el("div", { class: "sep", role: "separator" }) : el("button", { type: "button", role: "menuitem", ...(it.depth ? { style: `padding-left: ${10 + it.depth * 14}px` } : {}), onclick: (ev) => {
       ev.stopPropagation();
       const button = popButton();
       closePop();
@@ -1918,7 +2048,7 @@ function brRender() {
             el("span", { class: "nm", text: projectName(p) }), el("span", { class: "at", text: tildePath(p.path, home) }),
             el("span", { class: "on", text: checkedOut(p) })),
           el("button", { type: "button", class: "rm", title: `Remove from ${g}'s sources. Existing branches are kept.`,
-            "aria-label": `Remove ${projectName(p)}`, ...busy, onclick: () => brSources({ remove: p.path }) }, "×")))) : null,
+            "aria-label": `Remove ${projectName(p)}`, ...busy, onclick: () => brSources({ remove: p.path }) }, strokeIcon(ICONS.x, 14))))) : null,
       brPick.suggestions.length ? el("div", { class: "projects" }, el("div", { class: "lbl", text: "Where its actors work" }),
         ...brPick.suggestions.map((p) => el("button", { type: "button", class: "suggest", title: `${p.path}${p.remote ? "\n" + p.remote : ""}`,
           ...busy, onclick: () => brSources({ add: p.path }) },
@@ -1946,7 +2076,7 @@ function brRender() {
     harnessBadge(h), harnessName(h)));
   form.append(...[
     el("div", { class: "br-title" }, el("h3", {}, strokeIcon(ICONS.branch, 15), "New actor on a branch"),
-      el("button", { type: "button", class: "x", "aria-label": "Close", onclick: () => d.close() }, "×")),
+      el("button", { type: "button", class: "x", "aria-label": "Close", onclick: () => d.close() }, strokeIcon(ICONS.x, 16))),
     el("div", { class: "desc", text: `In ${g}. Works in its own worktree on a new branch from the source's last commit. Its changes are merged into the source's folder as it makes them.` }),
     el("div", { class: "lbl", text: "Source" }),
     ...source,

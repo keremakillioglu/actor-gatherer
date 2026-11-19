@@ -21,6 +21,14 @@ to write a summary of the user's interests, saved with paper_news_profile (every
 with paper_news_relevant. Do exactly what such a message asks, and nothing else with these two tools: paper_news_profile with no
 fields reads the summary and what the user told the app, for any agent."""
 
+[[links]]
+form = "paper/<id>"
+about = "A paper: its arXiv id, as paper_news_list shows it. It opens in the listing of the day it was in."
+
+[[links]]
+form = "day/<day>"
+about = "A day's listing: YYYY-MM-DD."
+
 [backend]
 python = "backend:PaperNewsApp"
 

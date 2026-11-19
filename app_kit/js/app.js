@@ -58,6 +58,14 @@ Everything goes through the page around it, by postMessage, which checks it agai
     ag.notices.clear(idOrKey)                            one of its own (or every one of a key) no longer asking for them
     ag.notices.onOpen(cb)                                cb(where, id): the user clicked one of this instance's -- the
                                                          panel shown, `where` as it was sent (given once it connects)
+    ag.links.onOpen(cb)                                  cb({href, path, part, values, form}): the user clicked a link to
+                                                         something in this app (`ag://<app>/<path>#<part>`, of a form its
+                                                         manifest's [[links]] lists; `values` its <name>s, decoded) -- the
+                                                         panel shown first; go there (given once it connects)
+    ag.links.href(path, part?)                           a link to `path` in this app (each segment %-encoded), to hand
+                                                         an agent or put in a page
+    ag.links.open(href)                                  a link to something in any app (`ag://...`), opened as a click on
+                                                         it in Chat opens it: that app's panel shown, handed the link
     ag.onMessage(cb)                                     what the app's backend tells its panels
     ag.api(path, init?)                                  its backend's own routes, on its own origin (no bridge)
     ag.close()                                           its pane closed
@@ -71,8 +79,9 @@ keeps var(--ag-corner) clear at its right end, which this file sets on :root. */
   "use strict";
   const params = new URLSearchParams(location.search);
   const HOST = params.get("host") || "";                  // the dashboard's origin: the only one listened to
-  // what the page's × covers at the panel's top right (frontend/src/features/apps/apps.css's .app-x: 22px, 6px in)
-  document.documentElement.style.setProperty("--ag-corner", "34px");
+  // what the page's × covers at the panel's top right (frontend/src/features/apps/apps.css's .app-x: 28px, 6px in, and a
+  // 6px gap), the same × as an actor pane's
+  document.documentElement.style.setProperty("--ag-corner", "40px");
   let seq = 0;
   const waiting = new Map();
   const listeners = { event: new Map(), message: [], attached: [], selection: [], theme: [], intent: new Map(),
@@ -263,6 +272,17 @@ keeps var(--ag-corner) clear at its right end, which this file sets on :root. */
         if (!listeners.intent.has("notice")) listeners.intent.set("notice", []);
         listeners.intent.get("notice").push((d) => cb(d && d.where, d && d.id));
       },
+    },
+    links: {
+      onOpen(cb) {
+        if (!listeners.intent.has("link")) listeners.intent.set("link", []);
+        listeners.intent.get("link").push((d) => cb(d || {}));
+      },
+      href(path, part) {
+        const segs = String(path || "").split("/").map(encodeURIComponent).join("/");
+        return `ag://${info.app}/${segs}` + (part ? `#${encodeURIComponent(String(part))}` : "");
+      },
+      open: (href) => send("link", { href: String(href || "") }),
     },
     onMessage(cb) { listeners.message.push(cb); },
     api(path, init) {

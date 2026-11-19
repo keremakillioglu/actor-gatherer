@@ -3,8 +3,8 @@
     load(folder)            the manifest of the app in `folder` (its app.toml), its files checked to be there
     parse(data, folder)     the same from the TOML's data, already read
     Manifest                what the manifest says: name, label, version, instances, backend, panel, tools, events,
-                            the intents it handles, its schedules (schedules.py), its capabilities, what agents are
-                            told of it
+                            the intents it handles, the links to it it opens (links.py), its schedules
+                            (schedules.py), its capabilities, what agents are told of it
     tool_name(app, tool)    a tool's name as agents see it: <app>_<tool>
     split_tool_name(name)   the reverse, given the apps there are
 
@@ -26,6 +26,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 from ag.ag_interface import EventType, Property
 from ag.ag_interface.event import PROPERTY_NAME
 
+from . import links as _links
 from .schedules import Schedule
 from .schedules import parse as _schedule
 
@@ -253,9 +254,22 @@ class Manifest:
     events: Tuple[EventType, ...] = ()        # as declared, its own properties only (`event_types`: with the host's)
     pollers: Tuple[PollerDef, ...] = ()
     handles: Tuple[Handles, ...] = ()
+    links: Tuple["_links.Link", ...] = ()     # the `ag://<name>/...` paths its panel opens (links.py)
     schedules: Tuple[Schedule, ...] = ()      # work its backend does on its own, at its times (App.scheduled)
     capabilities: Capabilities = field(default_factory=Capabilities)
     folder: Optional[str] = None
+
+    def link(self, path: str) -> Optional[Tuple["_links.Link", Dict[str, str]]]:
+        """The first of its [[links]] a path (%-encoded, as in a link) is of, and its values; None: none."""
+        for k in self.links:
+            got = k.match(path)
+            if got is not None:
+                return k, got
+        return None
+
+    def told(self) -> str:
+        """What agents are told of it: its instructions, then how to link to it (links.told)."""
+        return "\n\n".join(t for t in (self.instructions.strip(), _links.told(self)) if t)
 
     def tool(self, name: str) -> Optional[Tool]:
         """Its tool of that name (its own name, not `<app>_<name>`), else None."""
@@ -300,6 +314,7 @@ class Manifest:
                        for e in self.events],
             "pollers": [{"name": p.name, "class": p.cls, "file": p.file, "args": p.args} for p in self.pollers],
             "handles": [{"intent": h.intent, "types": list(h.types)} for h in self.handles],
+            "links": [{"form": k.form, "about": k.about} for k in self.links],
             "schedules": [s.to_dict() for s in self.schedules],
             "capabilities": {"native_view": self.capabilities.native_view, "reads": list(self.capabilities.reads),
                              "files": self.capabilities.files, "commands": self.capabilities.commands,
@@ -348,7 +363,7 @@ def parse(data: Dict[str, Any], folder: Optional[str] = None, where: str = FILE)
     r = _Reader(where)
     _known(r, data, "", ("name", "label", "version", "description", "instances", "access", "offer", "instructions",
                          "instructions_file", "agent", "asked", "mark", "backend", "panel", "tools", "tools_file",
-                         "events", "pollers", "handles", "schedules", "capabilities"))
+                         "events", "pollers", "handles", "links", "schedules", "capabilities"))
     name = r.string(data, "name")
     if not NAME.match(name):
         r.fail("name", f"{name!r}: lowercase letters, digits and _, starting with a letter, at most 24")
@@ -427,6 +442,11 @@ def parse(data: Dict[str, Any], folder: Optional[str] = None, where: str = FILE)
     handles = tuple(_handles(r, i, h) for i, h in enumerate(r.tables(data, "handles")))
     if handles and panel is None:
         r.fail("handles", "an app handles intents in its panel, and it has no [panel]")
+    links = tuple(_link(r, i, k) for i, k in enumerate(r.tables(data, "links")))
+    if len({k.form for k in links}) != len(links):
+        r.fail("links", "a form given twice")
+    if links and panel is None:
+        r.fail("links", "an app opens links in its panel, and it has no [panel]")
     schedules = tuple(_schedule(s, i, r.fail) for i, s in enumerate(r.tables(data, "schedules")))
     if len({s.name for s in schedules}) != len(schedules):
         r.fail("schedules", "a schedule named twice")
@@ -436,7 +456,8 @@ def parse(data: Dict[str, Any], folder: Optional[str] = None, where: str = FILE)
                     description=r.string(data, "description", ""), instances=instances, access=access,
                     instructions=instructions, agent=agent, asked=asked, mark=mark,
                     backend=backend, panel=panel, tools=tools, events=events, pollers=pollers, handles=handles,
-                    schedules=schedules, capabilities=_capabilities(r, data.get("capabilities", {})), folder=folder)
+                    links=links, schedules=schedules, capabilities=_capabilities(r, data.get("capabilities", {})),
+                    folder=folder)
 
 
 class _Reader:
@@ -612,6 +633,15 @@ def _handles(r: _Reader, i: int, d: dict) -> Handles:
         if not re.match(r"^[a-z]+/([a-z0-9.+-]+|\*)$", t):
             r.fail(at + "types", f"{t!r}: a media type such as \"application/pdf\" or \"image/*\"")
     return Handles(intent=intent, types=types)
+
+
+def _link(r: _Reader, i: int, d: dict) -> "_links.Link":
+    at = f"links[{i}]."
+    _known(r, d, at, ("form", "about"))
+    try:
+        return _links.form(r.string(d, "form", at=at), r.string(d, "about", "", at=at).strip())
+    except ValueError as exc:
+        r.fail(at + "form", str(exc))
 
 
 def _capabilities(r: _Reader, d: Any) -> Capabilities:

@@ -6,6 +6,7 @@
 // and uninstalling are each asked in a dialog first (catalog-dialogs.ts). What it asks of the page around it
 // (src/legacy/07-apps-page.js): an app opened, and the apps installed changed.
 import { get } from "../../core/api/client";
+import { glyph } from "../../core/ui/glyphs";
 import "./catalog.css";
 import { closeDialog, confirmBuiltin, confirmUninstall, fromSource, stageUpdate, type Asked } from "./catalog-dialogs";
 import { el, kb, markOf, said, tokens } from "./catalog-parts";
@@ -423,7 +424,7 @@ function details(a: CatalogApp): HTMLElement {
       el(
         "button",
         { type: "button", class: "ap-close", "aria-label": "Close details", onclick: () => select(null) },
-        "×",
+        glyph("x", 16),
       ),
     ),
     el("p", { text: said.sentence(a.description) }),

@@ -602,6 +602,23 @@ class GatewayTest(GatewayBase):
         self.assertEqual(app_host.stream_of("Notes", i), f"Notes ({i.id})")
         self.assertEqual(app_host.stream_of("Notes", self.host.instance("g", i.id)), f"Notes · Trip ({i.id})")
 
+    def test_agents_are_told_how_to_link_to_each_app_s_things(self):
+        links = '\n[[links]]\nform = "entry/<id>"\nabout = "An entry: its id from book_add."\n'
+        write_app(self.apps_dir, "notes", NOTES + links)
+        write_app(self.apps_dir, "book", book_toml("one", "task") + links, BOOK)
+        self.host.find()
+        said = tool_gateway.instructions("g")                          # a "group" app's: its MCP instructions
+        self.assertIn("## Notes (notes)\nKeep notes with notes_add.\n\nLinks: ", said)
+        self.assertIn("- `ag://notes/entry/<id>`: An entry: its id from book_add.", said)
+        self.assertIn("`?instance=<its id>`", said)                    # several Notes, one per folder
+        self.assertNotIn("ag://book/", said)                            # a "task" app's: told only to its task's agents
+        self.assertIn("- `ag://book/entry/<id>`: An entry", tool_gateway.apps_help("g", "book"))   # or asked for
+        book = self.host.open("book", "g", self.folder)
+        task_links.change("g", lambda: tasks.add("g", "c1", ["app:" + book.id]))   # c1 and the Book: one task
+        told = " ".join(tool_gateway.launch_args(self.rows[0]))
+        self.assertIn("- `ag://book/entry/<id>`: An entry: its id from book_add.", told)
+        self.assertNotIn("`?instance=<its id>`", told)                 # one Book
+
     def test_the_gatherer_agent_reaches_every_app_attached_to_none(self):
         write_app(self.apps_dir, "book", book_toml("per-folder", "task"), BOOK)
         self.host.find()
