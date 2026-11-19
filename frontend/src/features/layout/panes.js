@@ -1363,11 +1363,9 @@ async function appIntent(kind, data, g) {
   if (kind === "open-url") {
     await readApps(into, true);
     const free = gathererApps(into).find((o) => o.app.name === app.name && appTaskOf(into, o.id) === null);
-    if (free) {
-      let p = panes.apps.find((q) => q.instance.id === free.id);
-      if (!p) p = addAppPane(app, free.inst);
-      else if (p.held) holdAppPane(p, false);
-      saveAppPanes(); renderAgents();
+    const p = free && showAppPanel(app, free.inst);
+    if (p) {
+      renderAgents();
       return p.panel.intent(kind, data || {});
     }
   }
