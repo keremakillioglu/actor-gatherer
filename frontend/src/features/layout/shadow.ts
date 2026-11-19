@@ -44,7 +44,7 @@ class Shadow {
   ): void {
     if (this.started) return;
     this.started = true;
-    this.layout = M.migrate(get);
+    this.layout = M.load(get);
   }
 
   /** What the page keeps with the tab shown, not a change of what it shows (its arrangement, its map): the model's rule
@@ -57,6 +57,20 @@ class Shadow {
   canonWith(canon: ((k: string) => string | null) | undefined): void {
     if (canon) this.canon = canon;
   }
+  private persisted = "";
+  /** The model kept in this browser (M.KEY), if it changed since -- and the keys of before it was made from, dropped. */
+  persist(): void {
+    this.start();
+    const now = JSON.stringify(this.layout);
+    if (now === this.persisted) return;
+    this.persisted = now;
+    try {
+      localStorage.setItem(M.KEY, now);
+      for (const k of M.OLD_KEYS) localStorage.removeItem(k);
+    } catch {
+      /* this page only */
+    }
+  }
   /** The model as the page reads it: each task by its key now. */
   now(): M.Layout {
     this.start();
@@ -65,6 +79,7 @@ class Shadow {
   /** Back to a page not started (the unit tests' each new page). */
   reset(): void {
     this.started = false;
+    this.persisted = "";
     this.layout = M.empty();
     this.told = [];
     this.log.length = 0;

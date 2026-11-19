@@ -73,7 +73,6 @@ export interface TabsHooks {
   carry?: (task: string, to: string | null) => void;
 }
 
-const TABS_KEY = "ag-dashboard-screen-tabs";
 export const TABS_H = 40;
 let made = 0;
 const newId = (): string => `s${Date.now().toString(36)}${(made++).toString(36)}`;
@@ -484,16 +483,8 @@ export class Tabs {
     shadow.update(M.noted, screen, focus);
   }
 
-  private saved = "";
   private save(): void {
-    const now = JSON.stringify({ tabs: this.tabs, current: this.current });
-    if (now === this.saved) return;
-    this.saved = now;
-    try {
-      localStorage.setItem(TABS_KEY, now);
-    } catch {
-      /* this page only */
-    }
+    shadow.persist(); // the layout model, kept in this browser (model.ts's KEY)
   }
 
   private tabEl(t: Tab, look: ReturnType<Tabs["look"]>): HTMLElement {

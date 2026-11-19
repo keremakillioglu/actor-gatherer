@@ -107,6 +107,20 @@ describe("the layout model run beside the page", () => {
   });
 });
 
+describe("the layout kept in this browser", () => {
+  it("is written to one key, the keys it was made from dropped; read back as it was", () => {
+    localStorage.clear();
+    localStorage.setItem("ag-dashboard-task-trees", JSON.stringify({ "g\u0000t1": { tree: { id: "a" }, at: 1 } }));
+    shadow.reset();
+    expect(shadow.now().tasks["g\u0000t1"].tree).toEqual({ id: "a" }); // made from the key of before
+    shadow.update(M.rename, shadow.now().current, "Mine");
+    shadow.persist();
+    expect(localStorage.getItem("ag-dashboard-task-trees")).toBe(null);
+    shadow.reset();
+    expect([shadow.now().tabs[0].name, shadow.now().tasks["g\u0000t1"].tree]).toEqual(["Mine", { id: "a" }]);
+  });
+});
+
 describe("the model's rules the page tells it by", () => {
   it("opens what the page opens by itself only in a tab holding nothing; closes a task here, the tab kept", () => {
     const l = M.empty("e");

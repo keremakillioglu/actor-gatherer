@@ -99,15 +99,13 @@ function rekeyTask(was, now) {
   if (taskNow === was) taskNow = now;
   if (appsOnly === was) appsOnly = now;
 }
-// Each task's LAYOUT, as it was left (`taskLayouts`, kept in this browser): its actors' panes, in order, the one in focus,
+// Each task's LAYOUT, as it was left (the layout model's record of it, `left`: model.ts): its actors' panes, in order, the one in focus,
 // the view each shows, and its apps' panels -- with the chat minimized under them or not -- so a task is opened again as
 // it was, an actor's pane or an app's panel closed in it staying closed; where each goes, and how wide or tall, its
 // arrangement (features/layout/work.ts; made, the first time, from the widths and height an older page kept here). A
 // task never left yet opens as a task does at first: its actors not closed side by side, its apps above, the chat not
 // minimized. This page's own pane closed by its × (closeHerePane) is not among its actors' panes: its actor, `shut`, is
 // the one it opens with out of sight if none of the others was open (openTask).
-const TASK_LAYOUTS_KEY = "ag-dashboard-task-layouts-2", TASK_LAYOUTS_KEPT = 200;   // -2: none kept of a task never laid out
-const taskLayouts = (() => { try { return JSON.parse(localStorage.getItem(TASK_LAYOUTS_KEY)) || {}; } catch (e) { return {}; } })();
 function rememberTask(key) {
   if (!key) return;
   const sel = focusedActor(), g = parseKey(key).group, its = (pg, c) => pg === g && taskKey(pg, c) === key;
@@ -119,20 +117,16 @@ function rememberTask(key) {
   const apps = panes.apps.filter((p) => !p.held && p.g === g && appPaneTask(p) === key).map((p) => ({ app: p.app.name, id: p.instance.id }));
   const chosen = appSelected(), focusApp = chosen && apps.some((a) => a.id === chosen) ? chosen : null;   // an app selected in it
   const mine = !appsOnly && sel && sel[1] !== shut && taskKey(sel[0], sel[1]) === key;
-  taskLayouts[key] = { actors: appsOnly ? [] : actors, focus: mine ? sel[1] : appsOnly ? null : actors[0] || null, focusApp, apps,
-    views: appsOnly ? {} : views, shut: appsOnly ? null : shut, at: Date.now() };
-  const keys = Object.keys(taskLayouts).sort((x, y) => taskLayouts[y].at - taskLayouts[x].at);
-  for (const k of keys.slice(TASK_LAYOUTS_KEPT)) delete taskLayouts[k];
-  try { localStorage.setItem(TASK_LAYOUTS_KEY, JSON.stringify(taskLayouts)); } catch (e) { /* this page only */ }
+  const left = { actors: appsOnly ? [] : actors, focus: mine ? sel[1] : appsOnly ? null : actors[0] || null, focusApp, apps,
+    views: appsOnly ? {} : views, shut: appsOnly ? null : shut };
+  shadow.update(model.remember, key, left, Date.now());   // (the layout model's record of it: model.ts)
+  shadow.persist();
 }
-const taskLayout = (key) => taskLayouts[key] || null;
+const taskLayout = (key) => shadow.now().tasks[key]?.left || null;
 // Actor `c` closed from the list (closedInTabs): out of task `key` as it was left -- not opened with it again
 function forgetActor(key, c) {
-  const was = taskLayouts[key];
-  if (!was || (!(was.actors || []).includes(c) && was.focus !== c)) return;
-  was.actors = (was.actors || []).filter((x) => x !== c);
-  if (was.focus === c) was.focus = was.actors[0] || null;
-  try { localStorage.setItem(TASK_LAYOUTS_KEY, JSON.stringify(taskLayouts)); } catch (e) { /* this page only */ }
+  shadow.update(model.forgetActor, key, c);
+  shadow.persist();
 }
 // The actor `c` of `g` about to be shown in the pane in focus (show): of another task than the one shown, the one left
 // remembered (rememberTask: only one laid out in this page -- one shown by chance as the page opened, its apps never

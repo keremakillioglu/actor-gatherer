@@ -6,6 +6,7 @@ import {
   empty,
   forgetActor,
   holds,
+  load,
   merge,
   migrate,
   move,
@@ -127,7 +128,7 @@ describe("the layout model's tabs", () => {
       ["g\u0000t1"],
     ]);
     l = forgetActor(l, "g\u0000t1", "c2");
-    expect([l.tasks["g\u0000t1"].actors, l.tasks["g\u0000t1"].focus]).toEqual([[], null]);
+    expect([l.tasks["g\u0000t1"].left!.actors, l.tasks["g\u0000t1"].left!.focus]).toEqual([[], null]);
     for (let i = 0; i < 205; i++)
       l = remember(
         l,
@@ -156,16 +157,22 @@ describe("the migration from the six keys", () => {
     const l = migrate((k) => kept[k] ?? null);
     expect([l.current, l.tabs.length, shownTab(l).screen]).toEqual(["b", 2, leaf]);
     expect(l.tasks["g\u0000c1"]).toEqual({
-      actors: ["c1"],
-      apps: [],
-      focus: "c1",
-      focusApp: null,
-      views: { c1: "files" },
-      shut: null,
+      left: { actors: ["c1"], apps: [], focus: "c1", focusApp: null, views: { c1: "files" }, shut: null, at: 5 },
       tree: leaf,
       at: 7,
     });
     expect(l.tasks["g\u0000t1"].tree).toEqual(leaf);
+  });
+
+  it("keeps whatever else an older page kept with a task (its widths), and prefers the one key once it is there", () => {
+    const old: Record<string, string> = {
+      "ag-dashboard-task-layouts-2": JSON.stringify({ "g\u0000t1": { actors: ["a"], sizes: { a: 0.5 }, at: 1 } }),
+    };
+    expect(migrate((k) => old[k] ?? null).tasks["g\u0000t1"].left!.sizes).toEqual({ a: 0.5 });
+    const now = { ...two(), current: "b" };
+    const both: Record<string, string> = { ...old, "ag-dashboard-layout": JSON.stringify(now) };
+    expect(load((k) => both[k] ?? null)).toEqual(now);
+    expect(load((k) => (k === "ag-dashboard-layout" ? "{broken" : (old[k] ?? null))).tasks["g\u0000t1"]).toBeTruthy();
   });
 
   it("starts as a fresh home with nothing kept, or what was kept unreadable", () => {

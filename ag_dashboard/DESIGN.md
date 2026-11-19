@@ -360,8 +360,16 @@ The layout slice comes first, in four steps, each with every test passing:
    longer copies `shown()` into the tab, only the arrangement and the focus, and saves what changed. ⌥ (`take`) only
    takes the task out of the other tabs; the page's entering it opens it. The check stays, and on a difference still
    sets the model to the page. Entering a tab's tasks on a switch or a reload (`hooks.enter`) stays till step 4.
-4. *Writes*: clicks call the model's functions, one renderer opens and closes panes to match it (in place of the tells,
-   and of entering a tab's tasks), `shadow.ts` becomes the layout's store, and the old variables
+4. *The page's state into the model, then one renderer* -- moved a record at a time, the full suite after each:
+   - 4a (built): each task's record is the model's -- what it was left with (`left`, the old page's `taskLayouts`,
+     with whatever else an older page kept there) and its tree and tabs (`tasks.ts`'s `Tasks`, now pure rules:
+     `setTree`, `addTaskTab`, `showTaskTab`, `changeTaskTab`, `closeTaskTab`, `renameTaskTab`). The model is kept under
+     one key, `ag-dashboard-layout` (`load`), made once from the keys of before (`migrate`), which are then dropped:
+     `screen-tabs`, `task-layouts-2`, `task-trees`.
+   - 4b: the rest of the page's layout state -- its own pane out of sight (`hereAway`), a task of apps only
+     (`appsOnly`), the panes and top apps kept (`panes`, `top-apps`, `screen`).
+   - 4c: clicks call the model's functions, one renderer opens and closes panes to match it (in place of the tells,
+     and of entering a tab's tasks), `shadow.ts` becomes the layout's store, and the old variables
    (`appsOnly`, `taskNow`, `hereAway`, `tasksLaidOut`, `autoShown`, `taskLayouts`) and the six keys go -- one key,
    `ag-dashboard-layout`. The model then holds each task's open items itself (what `keysNow` reads off the panels now).
 
