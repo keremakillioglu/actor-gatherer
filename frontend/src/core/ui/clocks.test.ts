@@ -10,6 +10,9 @@ describe("the page's clocks", () => {
     box.innerHTML = `<span data-ago="999880">x</span><span data-lasting="999875">x</span><span data-since="999955">x</span>`;
     tick(box);
     expect([...box.children].map((n) => n.textContent)).toEqual(["2m ago", "2m 05s", "45s"]);
+    const words = box.firstChild!.firstChild;
+    tick(box); // the same words: the text left as it is, not set again
+    expect(box.firstChild!.firstChild).toBe(words);
     vi.useRealTimers();
   });
 });

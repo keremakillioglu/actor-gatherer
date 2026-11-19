@@ -5,12 +5,18 @@ import { ago, lasting, span } from "../format";
 
 let ticker: ReturnType<typeof setInterval> | null = null;
 
+/** `n`'s words set to `text`, if they aren't already: setting a text, even to what it was, lays the page out again
+ * ("3m ago" is so for a minute, and the page idle laid out every second). */
+const set = (n: HTMLElement, text: string) => {
+  if (n.textContent !== text) n.textContent = text;
+};
+
 /** Every count-up time on the page set, now. */
 export function tick(root: ParentNode = document): void {
   const now = Date.now() / 1000;
-  for (const n of root.querySelectorAll<HTMLElement>("[data-since]")) n.textContent = span(+n.dataset.since!, now);
-  for (const n of root.querySelectorAll<HTMLElement>("[data-ago]")) n.textContent = ago(+n.dataset.ago!);
-  for (const n of root.querySelectorAll<HTMLElement>("[data-lasting]")) n.textContent = lasting(+n.dataset.lasting!);
+  for (const n of root.querySelectorAll<HTMLElement>("[data-since]")) set(n, span(+n.dataset.since!, now));
+  for (const n of root.querySelectorAll<HTMLElement>("[data-ago]")) set(n, ago(+n.dataset.ago!));
+  for (const n of root.querySelectorAll<HTMLElement>("[data-lasting]")) set(n, lasting(+n.dataset.lasting!));
 }
 
 /** The ticker started, once a page. */
