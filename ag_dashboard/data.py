@@ -593,6 +593,8 @@ def _with_started(gatherers: List[dict], started: List[dict], now: Optional[floa
         elif s.get("ended") and not s.get("kept") and not s.get("pid") and a.get("alive") is None and not a.get("holder") \
                 and (a["last"] or 0) <= s["ended"]:
             a["status"], a["running"] = CLOSED, bool(a.get("building"))   # its process gone, seen ending here, not used since
+        elif a["status"] == RUNNING and _cut_off(s, a):
+            a["status"], a["running"], a["turn_over"] = IDLE, bool(a.get("building")), True
         if shown and shown.get("menu") and not a.get("asking"):
             a["asking"], a["status"] = shown, ASKING  # a menu its terminal shows as it starts: nothing goes on until it is
             #                                           answered, whatever its status was (none of it recorded yet)
@@ -603,6 +605,19 @@ def _with_started(gatherers: List[dict], started: List[dict], now: Optional[floa
             a["chattable"] = chattable(a)
             _settle_background(a, time.time() if now is None else now)
         g["agents"].sort(key=lambda a: a.get("created") or 0, reverse=True)
+
+
+def _cut_off(s: dict, a: dict) -> bool:
+    """Whether the agent's unfinished turn was cut off: the session's process ended here (`ended`) after anything
+    happened for it -- its latest activity, or the newest message ag stored for it (`said_at`) -- and its terminal runs
+    again (`pid`), a new process that has had nothing since (Chat's `stopped: closed`). Its turn's end never reached
+    ag: its hook server was stopped mid-turn (`ag stop`), or the dashboard closed its terminal (`ag dashboard restart`)
+    before the end was recorded. Not where a process the gatherer can tell runs had the session open before that end
+    (`holder`, `since`): the turn may go on there."""
+    ended = s.get("ended") or 0
+    if not (ended and s.get("pid")) or max(a.get("last") or 0, a.get("said_at") or 0) > ended:
+        return False
+    return not (a.get("alive") and (a.get("since") or 0) < ended)
 
 
 def _sent_pending(s: dict, a: dict, now: float) -> bool:
@@ -713,11 +728,10 @@ def _agents(conn, now: float, only: Optional[set] = None) -> List[dict]:
         a["last"] = max(a["last_read"] or 0, answered.get(ch) or 0) or (None if a["reads"] else a["last_event"])
         a["building"] = ch in building
         a["turn_over"] = turn_over(conn, ch, tables)[0]
-        a["said_at"] = user_at.get(ch)
+        a["said_at"] = user_at.get(ch)       # kept: a message stored, its read not yet recorded, is activity (`_cut_off`)
         a["status"] = status_of(a.get("alive"), a["turn_over"], max(a["last"] or 0, a["said_at"] or 0) or None, now)
         a["taken_back"] = None
         _status(conn, ch, a, tables, now)
-        del a["said_at"]
         a["running"] = a["building"] or a["status"] == RUNNING
         a["background"] = a.pop("record_background", [])
     return sorted(out.values(), key=lambda a: a["created"] or 0, reverse=True)   # in place: newest created first
