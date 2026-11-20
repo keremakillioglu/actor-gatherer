@@ -15,5 +15,5 @@
     "types": ["node"],
     "allowImportingTsExtensions": true
   },
-  "include": ["src", "e2e", "scripts", "*.ts"]
+  "include": ["src", "e2e", "scripts", "*.ts", "../app_kit/js/app.d.ts"]
 }

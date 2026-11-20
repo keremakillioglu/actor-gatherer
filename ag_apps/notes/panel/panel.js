@@ -1120,7 +1120,7 @@ and what agents see of it. The words under either are its caption. */
     if (k === "Escape" && !mod && !ev.shiftKey) { ev.preventDefault(); pickRange(b.id, b.id); return holdKeys(); }   // the line picked
     if (ev.shiftKey && !mod && !ev.altKey && (k === "ArrowUp" || k === "ArrowDown")) {
       const c = caretIn(tx), up = k === "ArrowUp", t = tx.textContent;   // its text selected to an end already: the lines
-      if (c && !(up ? t.slice(0, c.start) : t.slice(c.end)).replace(/​/g, "")) {   // from here
+      if (c && !(up ? t.slice(0, c.start) : t.slice(c.end)).replace(/\u200b/g, "")) {   // from here
         ev.preventDefault();
         const to = p.blocks[i + (up ? -1 : 1)];
         pickRange(b.id, to ? to.id : b.id);
@@ -1433,7 +1433,7 @@ and what agents see of it. The words under either are its caption. */
     const w = wordAround(tx, c.start);
     if (!w || wordRange(tx, w).cloneContents().querySelector("a")) return;   // (a link's words are its page's)
     const asked = ++spellAsked;
-    let got = null;
+    let got;
     try { got = await ag.spelling.check(w.word); } catch { return; }
     if (asked !== spellAsked || !got || !got.misspelled || menu || document.activeElement !== tx) return;
     const now = caretIn(tx);                              // (still there: nothing typed, nowhere else clicked)

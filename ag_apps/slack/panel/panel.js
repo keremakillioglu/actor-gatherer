@@ -730,7 +730,7 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
     try { await navigator.clipboard.writeText(text); return true; } catch { /* no clipboard in this frame: the old way */ }
     const t = el("textarea", { style: "position:fixed;opacity:0;top:0;left:0" });
     t.value = text; document.body.append(t); t.select();
-    let ok = false;
+    let ok;
     try { ok = document.execCommand("copy"); } catch { ok = false; }
     t.remove();
     return ok;
@@ -991,7 +991,8 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
     $("scroll").hidden = !S.open;
     $("conv-head").hidden = !S.open;
     if (!S.open) { log.replaceChildren(); $("here-drafts").replaceChildren(); $("older").hidden = true; drawJump(); return; }
-    log.replaceChildren(st && st.loaded ? build(st.list, S.open, { readAt: S.readAt[S.open] }) : el("div", { class: "older" }, st && st.error ? st.error : "Loading…"));
+    // drawn anew, each message the same as before kept (agKit.patch): one arriving draws only itself
+    agKit.patch(log, st && st.loaded ? build(st.list, S.open, { readAt: S.readAt[S.open] }) : [el("div", { class: "older" }, st && st.error ? st.error : "Loading…")]);
     if (st && st.loaded && !st.list.length) log.replaceChildren(el("div", { class: "older" }, "No messages yet."));
     const older = $("older");
     older.hidden = !(st && st.loaded && (st.older || !st.more) && st.list.length);
