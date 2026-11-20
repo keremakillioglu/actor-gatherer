@@ -9,6 +9,9 @@ import { dropGone, heedHome } from "../notify/notify.js";
 import { term } from "../terminal/terminal.js";
 import { opened } from "../chat/files-view.js";
 import { appAsked, appAskedOf } from "../apps/app-actors.js";
+import { useDashboard } from "../../core/store";
+import { askedByAgent } from "../apps/catalog-dialogs";
+import * as prefs from "../../core/prefs";
 
 // A session made here that never started -- no process of it now, none starting, nothing of it in its gatherer (no
 // events, no calls): its × discards it (sessions.py's `discard`), so it is listed nowhere and nothing of it is kept.
@@ -43,10 +46,10 @@ const SEEN_KEY = "ag-dashboard-seen";                // where this browser kept 
 const seen = { at: {}, here: false, handing: false, dropped: false };   // here: kept in this browser
 const unseen = (a) => !!a.key && !!a.last && a.last > (seen.at[a.key] || 0);
 function keptHere() {
-  try { const v = JSON.parse(localStorage.getItem(SEEN_KEY)); return v && typeof v === "object" ? v : {}; }
-  catch (e) { return {}; }
+  const v = prefs.json(SEEN_KEY);
+  return v && typeof v === "object" ? v : {};
 }
-function dropHere() { try { localStorage.removeItem(SEEN_KEY); } catch (e) { /* stays; the server's looks win */ } }
+function dropHere() { prefs.drop(SEEN_KEY); }
 // Every actor of `home` taken as seen: as of `had`, where it has one; else as it is.
 function everySeen(home, had) {
   const at = { ...had };
@@ -71,7 +74,7 @@ function takeSeen(home) {
 // Looks kept: by the server, or in this browser for a server from before `seen`. Whether they were.
 async function tellSeen(looked) {
   if (SNAPSHOT || PANE || !looked.length) return false;
-  if (seen.here) { try { localStorage.setItem(SEEN_KEY, JSON.stringify(seen.at)); return true; } catch (e) { return false; } }
+  if (seen.here) return prefs.keep(SEEN_KEY, seen.at);
   try { await post("/api/seen", { seen: looked }); return true; }
   catch (err) { setLive(`Not saved: ${err.message}`); return false; }
 }
@@ -105,7 +108,7 @@ function takeHome(home) {
   //                                                    before anything draws the list for this home
   if (state.home) home.tasks = newerTasks(state.home.tasks, home.tasks, home.now);
   else newerTasks({}, home.tasks, home.now);
-  window.agNext.home(home);                        // the new code's store has it too (src/bridge.ts)
+  useDashboard.getState().setHome(home);           // the new code's store has it too (core/store)
   for (const g of home.gatherers) for (const a of g.agents) {
     a.key = key(g.name, a.channel);
     if (a.last_user_message) {                     // an app's words: the user's -- and what in the app they are about
@@ -134,7 +137,7 @@ function takeHome(home) {
 // An agent's asking to install, update or uninstall an app (app_requests.py; home's `app_requests`): the first not yet
 // shown here put to the reader in the Apps page's dialog -- the apps read again once they answer
 function askedByAgents() {
-  if (SNAPSHOT || PANE || !window.agNext || !(state.home.app_requests || []).length) return;
+  if (SNAPSHOT || PANE || !(state.home.app_requests || []).length) return;
   const who = (c) => {
     for (const g of state.home.gatherers) {
       const a = g.agents.find((x) => x.channel === c || (x.session && x.session.started_as === c));
@@ -142,7 +145,7 @@ function askedByAgents() {
     }
     return `Agent ${c.slice(0, 8)}`;
   };
-  window.agNext.appsPage.askedByAgent(state.home.app_requests, who, () => void appsChanged());
+  askedByAgent(state.home.app_requests, who, () => void appsChanged());
 }
 // An actor is looked at while it is open in a pane -- not this page's own, out of sight while a screen tab without it
 // shows (features/layout/panes.js's isAway). An app is looked at as an actor is: its panel shown (not held out of sight) -- while

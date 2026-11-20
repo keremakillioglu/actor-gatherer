@@ -28,10 +28,12 @@ import {
 import { dismissNotice, openNotice } from "../notify/notify.js";
 import { TASK_KINDS, chatAtEnd, chatToEnd, permissionVerb } from "../chat/chat.js";
 import { tildePath } from "../../core/page/code.js";
-import { firstLine, plural } from "../transcript/transcript.js";
+import { firstLine, plural } from "../../core/format";
 import { FILE_KINDS, showKept } from "../chat/files-view.js";
 import { enc } from "../history/history.js";
 import { actorLogo } from "../apps/app-actors.js";
+import { useSettings } from "../settings/store";
+import * as prefs from "../../core/prefs";
 
 // ------------------------------------------------------------------ the list folded, or over the whole page
 // The list's shape, kept in this browser: "list"; folded to a rail ("folded"), the actors at work or wanting the reader
@@ -55,7 +57,7 @@ function setListMode(mode, keep = true) {
   document.documentElement.classList.toggle("list-full", mode === "full");
   document.documentElement.classList.toggle("list-was-folded", mode === "full" && listFrom === "folded");   // the panes as wide as they were
   drawListButtons();
-  if (keep) { try { localStorage.setItem(LIST_KEY, JSON.stringify({ mode, from: listFrom })); } catch (e) { /* this page only */ } }
+  if (keep) { prefs.keep(LIST_KEY, { mode, from: listFrom }); }
   if (mode === "full" && was !== "full") {          // what had the keys -- a terminal, a pane's frame -- has them no more
     const at = document.activeElement;
     if (at && at !== document.body && at.closest(".panes")) at.blur();
@@ -68,7 +70,7 @@ function setListMode(mode, keep = true) {
 // max), kept under key; at(x) is the width the pointer at x gives. A double click: the stylesheet's width again.
 function widthGrip(grip, key, node, prop, min, at) {
   const set = (w) => w > 0 ? node.style.setProperty(prop, `${Math.round(Math.max(min, w))}px`) : node.style.removeProperty(prop);
-  try { set(Number(localStorage.getItem(key))); } catch (e) { /* this page only */ }
+  set(Number(prefs.text(key)));
   grip.addEventListener("pointerdown", (ev) => {
     if (ev.button !== 0) return;
     ev.preventDefault();
@@ -79,11 +81,11 @@ function widthGrip(grip, key, node, prop, min, at) {
     const up = () => {
       grip.classList.remove("on"); box.classList.remove("resizing");
       grip.removeEventListener("pointermove", move); grip.removeEventListener("pointerup", up); grip.removeEventListener("pointercancel", up);
-      try { localStorage.setItem(key, String(parseInt(node.style.getPropertyValue(prop)) || "")); } catch (e) { /* this page only */ }
+      prefs.setText(key, String(parseInt(node.style.getPropertyValue(prop)) || ""));
     };
     grip.addEventListener("pointermove", move); grip.addEventListener("pointerup", up); grip.addEventListener("pointercancel", up);
   });
-  grip.addEventListener("dblclick", () => { set(0); try { localStorage.removeItem(key); } catch (e) { /* this page only */ } });
+  grip.addEventListener("dblclick", () => { set(0); prefs.drop(key); });
 }
 // the folded rail's own width (--rail-w), its right edge dragged as the list's is: 76px at the least, 360px at the most
 const RAIL_GRIP = el("div", { class: "rail-grip", "aria-hidden": "true", title: "Drag to resize · double-click to reset" });
@@ -115,7 +117,7 @@ function setListHidden(on, keep = true) {
   document.documentElement.classList.toggle("list-hidden", listHidden);
   peekList(false);                                   // pressed to hide it: hidden now, out again at the edge
   drawListButtons();
-  if (keep) { try { localStorage.setItem(HIDE_KEY, listHidden ? "1" : ""); } catch (e) { /* this page only */ } }
+  if (keep) { prefs.setText(HIDE_KEY, listHidden ? "1" : ""); }
 }
 function peekList(on) {
   clearTimeout(peekTimer);
@@ -175,7 +177,8 @@ function renderFolded() {
 // reloads; gone (a folder deleted, a gatherer hidden): its gatherer's top, or every gatherer.
 const RAIL_AT_KEY = "ag-dashboard-rail-at";
 let railAt = (() => {
-  try { const v = JSON.parse(localStorage.getItem(RAIL_AT_KEY)); if (v && v.at && typeof v.at.g === "string") return v.at; } catch (e) { /* none kept */ }
+  const v = prefs.json(RAIL_AT_KEY);
+  if (v && v.at && typeof v.at.g === "string") return v.at;
   return null;
 })();
 let railMoved = false;                                // stepped in or out: the rail drawn from its top
@@ -190,7 +193,7 @@ function railFind(at) {
 }
 function railGo(at) {
   railAt = at; railMoved = true;
-  try { localStorage.setItem(RAIL_AT_KEY, JSON.stringify({ at: railAt })); } catch (e) { /* this page only */ }
+  prefs.keep(RAIL_AT_KEY, { at: railAt });
   cardHide(); renderRail();
 }
 const railDrill = (at) => { if (!sameAt(at, railAt)) railGo(at); };
@@ -282,12 +285,13 @@ function drawTotals(shown) {
 const RAIL_SHOW_KEY = "ag-dashboard-rail-show";
 const railShow = (() => {
   const v = { folders: false, saved: false, closed: false };
-  try { const k = JSON.parse(localStorage.getItem(RAIL_SHOW_KEY)) || {}; for (const n of Object.keys(v)) v[n] = k[n] === true; } catch (e) { /* none kept */ }
+  const k = prefs.json(RAIL_SHOW_KEY) || {};
+  for (const n of Object.keys(v)) v[n] = k[n] === true;
   return v;
 })();
 function setRailShow(what, on) {
   railShow[what] = on;
-  try { localStorage.setItem(RAIL_SHOW_KEY, JSON.stringify(railShow)); } catch (e) { /* this page only */ }
+  prefs.keep(RAIL_SHOW_KEY, railShow);
   renderRail();
 }
 // Its foot: "Show…", folded; hovered, in focus from the keys, or pressed (where there is no hovering), a box each for
@@ -325,10 +329,10 @@ function busyFolders(g) {
 // it is busy no more, so it opens again the next time; any other folder open or not as the list has it.
 const BUSY_FOLDED_KEY = "ag-dashboard-rail-busy-folded";
 const busyFolded = (() => {
-  try { const v = JSON.parse(localStorage.getItem(BUSY_FOLDED_KEY)); if (Array.isArray(v)) return new Set(v); } catch (e) { /* none kept */ }
+  { const v = prefs.list(BUSY_FOLDED_KEY); if (v) return new Set(v); }
   return new Set();
 })();
-const keepBusyFolded = () => { try { localStorage.setItem(BUSY_FOLDED_KEY, JSON.stringify([...busyFolded])); } catch (e) { /* this page only */ } };
+const keepBusyFolded = () => { prefs.keep(BUSY_FOLDED_KEY, [...busyFolded]); };
 const railOpen = (g, f, busy) => busy.has(f.id) ? !busyFolded.has(folderKey(g.name, f.id)) : isOpenFolder(g.name, f.id);
 function railFold(g, f, busy) {
   if (!busy.has(f.id)) return toggleFolder(g.name, f.id);
@@ -933,7 +937,7 @@ function endCardEdit(keep) {
 const MON_FOLD_KEY = "ag-dashboard-monitor-folded", MON_GAP = 1000, MON_BATCH = 24;
 const MON_ORDER = ["Waiting for you", "Error", "Running", "Background", "Finished", "Idle", "Saved", "Closed"];
 const monFolded = (() => {
-  try { const v = JSON.parse(localStorage.getItem(MON_FOLD_KEY)); if (Array.isArray(v)) return new Set(v); } catch (e) { /* none kept */ }
+  { const v = prefs.list(MON_FOLD_KEY); if (v) return new Set(v); }
   return new Set(["Saved", "Closed"]);
 })();
 const mon = { got: new Map(), cards: new Map(), secs: new Map(), box: null, visible: new Set(), timer: null, busy: false, last: -Infinity, seen: null,
@@ -949,7 +953,7 @@ function monForget() {                                 // left: nothing in view;
 }
 function foldSection(name) {
   if (monFolded.has(name)) monFolded.delete(name); else monFolded.add(name);
-  try { localStorage.setItem(MON_FOLD_KEY, JSON.stringify([...monFolded])); } catch (e) { /* this page only */ }
+  prefs.keep(MON_FOLD_KEY, [...monFolded]);
   renderMonitor();
 }
 // `nodes` in `box`, in order: those gone taken out first, then only those not in their place moved (a node moved starts
@@ -1224,14 +1228,14 @@ export function start() {
     totals.addEventListener("pointerenter", peekHere);
     totals.addEventListener("pointermove", peekHere);
     totals.addEventListener("pointerleave", (ev) => { at(ev); if (listHidden) unpeekSoon(); });
-    try { listHidden = localStorage.getItem(HIDE_KEY) === "1"; } catch (e) { /* none kept */ }
+    listHidden = prefs.flag(HIDE_KEY);
     const root = document.documentElement;
     root.classList.add("list-still");                  // the page opened with it hidden: hidden, not sliding away
     root.classList.toggle("list-hidden", listHidden);
     requestAnimationFrame(() => requestAnimationFrame(() => root.classList.remove("list-still")));
   }
   document.addEventListener("keydown", (ev) => {        // first: Esc closes the settings first, if they are open
-    if (ev.key !== "Escape" || listMode !== "full" || !document.getElementById("about").hidden || window.agNext.settings.fileOpen()) return;
+    if (ev.key !== "Escape" || listMode !== "full" || !document.getElementById("about").hidden || useSettings.getState().file.open) return;
     ev.preventDefault();
     leaveFull();
   }, true);
@@ -1256,8 +1260,7 @@ export function start() {
   }
   addEventListener("resize", () => { if (hover.shown) cardDraw(); });
   (() => {                                           // as the reader left it: over the whole page, from where it came
-    let v = null;
-    try { v = JSON.parse(localStorage.getItem(LIST_KEY)); } catch (e) { /* none kept */ }
+    const v = prefs.json(LIST_KEY);
     if (v && (v.from === "list" || v.from === "folded")) listMode = v.from;
     setListMode(v && v.mode, false);
   })();

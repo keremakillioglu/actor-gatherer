@@ -11,6 +11,9 @@ import { chatAtEnd, chatToEnd } from "../chat/chat.js";
 import { chatFeed, chatView } from "../chat/views.js";
 import { opened } from "../chat/files-view.js";
 import { canMinimize, chatMin, topShown } from "../layout/top.js";
+import { useTurns } from "../chat/store";
+import { useSettings } from "../settings/store";
+import * as prefs from "../../core/prefs";
 
 // ------------------------------------------------------------------ data
 let hidingMoved = false;
@@ -264,7 +267,7 @@ function setTheme(pick, keep) {
   if (pick !== "light" && pick !== "dark") pick = "system";
   if (pick === "system") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = pick;
   for (const b of document.querySelectorAll("[data-theme-pick]")) b.setAttribute("aria-pressed", b.dataset.themePick === pick ? "true" : "false");
-  if (keep) { try { localStorage.setItem(THEME_KEY, pick); } catch (e) { /* this page only */ } }
+  if (keep) { prefs.setText(THEME_KEY, pick); }
   for (const p of panes.others) p.call("theme", pick);
   window.dispatchEvent(new Event("ag-theme"));
 }
@@ -274,7 +277,7 @@ const AVATAR_KEY = "ag-dashboard-avatar";
 function setAvatarMode(pick, keep, draw = true) {
   keepAvatarMode(pick === "simple" ? "simple" : "acting");
   for (const b of document.querySelectorAll("[data-avatar-pick]")) b.setAttribute("aria-pressed", b.dataset.avatarPick === avatarMode ? "true" : "false");
-  if (keep) { try { localStorage.setItem(AVATAR_KEY, avatarMode); } catch (e) { /* this page only */ } }
+  if (keep) { prefs.setText(AVATAR_KEY, avatarMode); }
   for (const p of panes.others) p.call("avatar", avatarMode);
   if (draw && chatView().id === "files") keepingPlace(renderMain);
 }
@@ -286,9 +289,9 @@ const EARLIER_KEY = "ag-dashboard-chat-earlier";
 let earlierTurns = "messages";
 function setEarlierTurns(pick, keep, draw = true) {
   earlierTurns = pick === "whole" ? "whole" : "messages";
-  window.agNext.chat.clearFlips();                   // the turns' clicks: Chat's turns (src/features/chat/store.ts)
+  useTurns.getState().clearFlips();                   // the turns' clicks: Chat's turns (src/features/chat/store.ts)
   for (const b of document.querySelectorAll("[data-earlier-pick]")) b.setAttribute("aria-pressed", b.dataset.earlierPick === earlierTurns ? "true" : "false");
-  if (keep) { try { localStorage.setItem(EARLIER_KEY, earlierTurns); } catch (e) { /* this page only */ } }
+  if (keep) { prefs.setText(EARLIER_KEY, earlierTurns); }
   for (const p of panes.others) p.call("earlier", earlierTurns);
   if (draw && chatView().id === "files") keepingPlace(renderMain);
 }
@@ -298,17 +301,17 @@ export function start() {
     if (ev.target && ev.target.id === "composer-text") { lastKey = performance.now(); fitBox(ev.target); keepDraft(ev.target.dataset.draft, ev.target.value); }
   }, true);
   matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => window.dispatchEvent(new Event("ag-theme")));
-  setAvatarMode((() => { try { return localStorage.getItem(AVATAR_KEY); } catch (e) { return null; } })(), false, false);
+  setAvatarMode(prefs.text(AVATAR_KEY), false, false);
   document.getElementById("avatar-mode").addEventListener("click", (ev) => {
     const b = ev.target.closest("[data-avatar-pick]");
     if (b) setAvatarMode(b.dataset.avatarPick, true);
   });
-  setEarlierTurns((() => { try { return localStorage.getItem(EARLIER_KEY); } catch (e) { return null; } })(), false, false);
+  setEarlierTurns(prefs.text(EARLIER_KEY), false, false);
   document.getElementById("chat-earlier").addEventListener("click", (ev) => {
     const b = ev.target.closest("[data-earlier-pick]");
     if (b) setEarlierTurns(b.dataset.earlierPick, true);
   });
-  setTheme((() => { try { return localStorage.getItem(THEME_KEY); } catch (e) { return null; } })() || "dark", false);
+  setTheme(prefs.text(THEME_KEY) || "dark", false);
   document.getElementById("theme").addEventListener("click", (ev) => {
     const b = ev.target.closest("[data-theme-pick]");
     if (b) { setTheme(b.dataset.themePick, true); setAbout(false); }
@@ -316,13 +319,13 @@ export function start() {
   document.getElementById("about-btn").addEventListener("click", () => {
     const open = document.getElementById("about").hidden;
     setAbout(open);
-    if (open) window.agNext.settings.load().catch(() => {});
+    if (open) useSettings.getState().load().catch(() => {});
   });
   document.getElementById("about-x").addEventListener("click", () => setAbout(false));   // its own ×, as Esc
   document.addEventListener("click", (ev) => { if (!ev.target.closest(".about-wrap, .cfg-file")) setAbout(false); });
   document.addEventListener("keydown", (ev) => {
     if (ev.key !== "Escape") return;
-    if (window.agNext.settings.fileOpen()) { window.agNext.settings.closeFile(); return; }
+    if (useSettings.getState().file.open) { useSettings.getState().closeFile(); return; }
     setAbout(false);
   });
 }

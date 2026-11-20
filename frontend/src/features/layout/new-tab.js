@@ -13,6 +13,8 @@ import {
 import { drawAppsPage, openAppsPage } from "../apps/apps-page.js";
 import { renderMain } from "../page/main-view.js";
 import { tildePath } from "../../core/page/code.js";
+import * as appHost from "../apps/host";
+import * as prefs from "../../core/prefs";
 
 // A NEW TAB's page (features/layout/work.ts's `blank` hook): what a tab showing nothing shows -- one made by "+" on the
 // tabs' bar or the new-tab key, or the last tab closed. A message box for a new actor: Enter starts one where its line
@@ -32,8 +34,8 @@ const START_PLACE_KEY = "ag-dashboard-start-place", START_HARNESS_KEY = "ag-dash
 const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
 // the page drawn: its tab, the choices made on it (null: as they start), its parts redrawn as the home changes
 const newTab = { tab: "", box: null, input: null, parts: null, place: null, cwd: null, harness: null, error: "", busy: "", sig: "" };
-const keptValue = (k) => { try { return JSON.parse(localStorage.getItem(k) || "null"); } catch (e) { return null; } };
-const keepValue = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* this page only */ } };
+const keptValue = (k) => prefs.json(k);
+const keepValue = (k, v) => { prefs.keep(k, v); };
 const realGroups = () => (state.home ? state.home.gatherers.filter((g) => !g.alone) : []);
 const canAlone = () => !!(state.home && state.home.merged && startable().length && aloneUnder());
 // a place as it is now: its group still there, its folder still in it and not closed (else the group's top); on its own,
@@ -115,7 +117,7 @@ function keysSaid() {
 function refreshNewTab(now = false) {
   const box = newTab.box, parts = newTab.parts;
   if (!box || !parts || box.hidden || !box.isConnected || !state.home) return;
-  const p = ntPlace(), apps = PANE || SNAPSHOT ? [] : window.agNext.apps.found();
+  const p = ntPlace(), apps = PANE || SNAPSHOT ? [] : appHost.found();
   const sig = JSON.stringify([p, placeName(p), startable(), ntHarness(p), ntCwd(p), canAlone(), newTab.busy, newTab.error,
     state.home.terminals, apps.map((a) => [a.name, a.label, !!a.failed])]);
   if (!now && sig === newTab.sig) return;
@@ -226,7 +228,7 @@ async function ntRun(what, run) {
   finally { workPlacer.tabs.filling(false); newTab.busy = ""; refreshNewTab(true); }
 }
 async function ntOpenApp(g, p, app) {
-  const inst = await window.agNext.apps.open(app.name, g.name, ntCwd(p) || null);
+  const inst = await appHost.open(app.name, g.name, ntCwd(p) || null);
   const id = appItem(inst.id), fresh = !appInfo(g.name, inst.id);
   if (fresh && p.folder !== null)                   // a new one: filed where it was started (one there already stays put)
     await folderPost(g.name, { do: "file", channels: [id], folder: p.folder }, (tree) => { tree.filed[id] = p.folder; openUp(tree, p.folder); });

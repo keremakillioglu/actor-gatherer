@@ -8,6 +8,7 @@ import {
 } from "./list.js";
 import { cardHide } from "./modes.js";
 import { crewButton, isAt } from "../layout/panes.js";
+import * as prefs from "../../core/prefs";
 
 // FOLDERS OF GATHERERS (gatherer_folders.py, `home.gatherer_folders`: {folders: [{id, parent, name}], filed: {gatherer:
 // folder id}}), kept by the server so every dashboard on this home shows the same: above the gatherers, only to organise
@@ -27,12 +28,12 @@ const GF_NEW = "New folder";
 const GFS = { name: GF, agents: [] };
 const GF_FOLDED_KEY = "ag-dashboard-gatherer-folders-folded";
 const gfFolded = (() => {
-  try { const v = JSON.parse(localStorage.getItem(GF_FOLDED_KEY)); if (Array.isArray(v)) return new Set(v); } catch (e) { /* none kept */ }
+  { const v = prefs.list(GF_FOLDED_KEY); if (v) return new Set(v); }
   return new Set();
 })();
 function gfShow(id, open) {
   if (open) gfFolded.delete(id); else gfFolded.add(id);
-  try { localStorage.setItem(GF_FOLDED_KEY, JSON.stringify([...gfFolded])); } catch (e) { /* kept for this page only */ }
+  prefs.keep(GF_FOLDED_KEY, [...gfFolded]);
 }
 // The folder the gatherer named `name` is kept in: its id, or null for the list's top (its folder deleted since: the top)
 const gfOf = (name) => { const id = treeOf(GF).filed[name]; return folderById(GF, id) ? id : null; };

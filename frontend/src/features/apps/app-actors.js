@@ -1,5 +1,6 @@
 import { PANE, SNAPSHOT } from "../../core/page/state.js";
 import { el, harnessBadge, harnessLogo } from "../../core/page/helpers.js";
+import * as appHost from "./host";
 
 // The actor's avatar (avatars.py), its harness's badge small at the corner; an actor with none (no
 // picture to give, or a snapshot from before them) has its harness's mark alone.
@@ -27,10 +28,10 @@ function appRole(info) {
     return ks.length === 1 && typeof r[ks[0]] === "string" ? { app: ks[0], key: r[ks[0]] } : null;
   } catch (e) { return null; }
 }
-// The app an actor's role names, if it is one the page knows (window.agNext.apps): its manifest, as /api/apps lists it.
+// The app an actor's role names, if it is one the page knows (features/apps/host.ts): its manifest, as /api/apps lists it.
 const appOfActor = (info) => {
   const r = appRole(info);
-  return r && !PANE && !SNAPSHOT && window.agNext ? window.agNext.apps.named(r.app) || null : null;
+  return r && !PANE && !SNAPSHOT ? appHost.named(r.app) || null : null;
 };
 // The app's mark on an actor's avatar: its manifest's `mark`, from the dashboard's own origin.
 function appMark(info) {
@@ -42,8 +43,8 @@ function appMark(info) {
 // The app that wrote a message (one holding its [asked] `when`: DocWriter's prompt, a Browser's message from before it
 // was an app, a line Notes sent), and its `pattern`'s match: {app, m}; null for any other message.
 function appWrote(text) {
-  if (typeof text !== "string" || PANE || SNAPSHOT || !window.agNext) return null;
-  for (const app of window.agNext.apps.found()) {
+  if (typeof text !== "string" || PANE || SNAPSHOT) return null;
+  for (const app of appHost.found()) {
     const a = app.asked;
     if (!a || !a.when || !text.includes(a.when)) continue;
     let m;

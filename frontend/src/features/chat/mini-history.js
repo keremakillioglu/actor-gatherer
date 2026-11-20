@@ -6,9 +6,12 @@ import {
 import { keepingPlace } from "../settings/panel.js";
 import { statusOf } from "../list/seen.js";
 import { renderMain } from "../page/main-view.js";
-import { firstLine, plural, str } from "../transcript/transcript.js";
+import { str } from "../transcript/transcript.js";
+import { firstLine, plural } from "../../core/format";
 import { callLabel, callView, chatViewOf, foldSide, mySends, setFilesTurn, viewAtWork } from "./files-view.js";
 import { ME_MARKS, chatMin, meMark, setChatMin } from "../layout/top.js";
+import { markdown, unplanned } from "../../core/ui/md";
+import { cidsOf } from "./view";
 
 // ------------------------------------------------------------------ a minimized pane's history
 // A pane minimized (features/layout/top.js's MINI_VIEW) shows, right of its message box, two lines of its conversation: the user's
@@ -28,7 +31,7 @@ const miniData = () => state.files && state.selected && state.files.key === key(
 const miniTurns = (info) => { const v = chatViewOf(info), d = miniData(); return (v && v.turns) || (d && d.turns) || []; };
 // What the agent said last in a turn, readable: its last message.
 const lastSaid = (t) => { const r = (t.replies || []).filter((x) => x.kind === "text" && str(x.text).trim()); return r.length ? r[r.length - 1].text : null; };
-const plainLine = (text, n = 200) => firstLine(str(window.agNext.ui.unplanned(str(text))).replace(/`|\*\*|^#{1,6}\s+/gm, "").trim(), n);
+const plainLine = (text, n = 200) => firstLine(str(unplanned(str(text))).replace(/`|\*\*|^#{1,6}\s+/gm, "").trim(), n);
 
 // The two lines, right of the message box: built at each draw of the pane, from what the Chat view has.
 function miniHistory({ info, running }) {
@@ -36,7 +39,7 @@ function miniHistory({ info, running }) {
   const t = turns.length ? turns[turns.length - 1] : null;
   const mine = mySends(), atWork = viewAtWork(info) || running;
   const opening = (v && v.opening) || (mine.length && !atWork ? mine[0] : null);
-  const waits = [...((v && v.waiting) || []), ...(atWork ? mine.filter((m) => !(v && window.agNext.chat.cidsOf(v).has(m.cid))) : [])];
+  const waits = [...((v && v.waiting) || []), ...(atWork ? mine.filter((m) => !(v && cidsOf(v).has(m.cid))) : [])];
   if (!t && !opening) { miniCard.shut(); return null; }
   const rows = [];
   // the user's: what waits to reach the agent, else the turn's latest message (one written while it ran, else its own)
@@ -273,7 +276,7 @@ const miniCard = (() => {
     }
     if (finalAt >= 0) {
       const long = !latest && str(reply).length > MINI_REPLY && !opened.has(`r${t.n}`);
-      out.push(el("div", { class: "mh-reply" + (long ? " clamp" : "") }, window.agNext.ui.markdown(str(reply))));
+      out.push(el("div", { class: "mh-reply" + (long ? " clamp" : "") }, markdown(str(reply))));
       if (long) out.push(el("button", { type: "button", class: "mh-more", text: "Show full reply", onclick: () => { opened.add(`r${t.n}`); fill(true); } }));
     } else if (!live && !(latest && miniCurState(a) === "asking")) {
       const stopped = t.stopped || null;
@@ -315,7 +318,7 @@ const miniCard = (() => {
       const n = el("div", { class: "mh-said" + (open ? " open" : ""), title: open ? "Fold the message" : "Show the whole message",
         onclick: () => { opened[open ? "delete" : "add"](k); fill(true); } },
         el("span", { class: "dot", text: "●" }), label ? el("span", { class: "lbl", text: label }) : null,
-        open ? window.agNext.ui.markdown(str(r.text)) : el("span", { class: "first", text: plainLine(r.text) }));
+        open ? markdown(str(r.text)) : el("span", { class: "first", text: plainLine(r.text) }));
       return n;
     }
     const c = s.c, k = `c${t.n}-${s.i}`, open = opened.has(k);

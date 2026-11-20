@@ -7,6 +7,7 @@ import {
   actorPanes, isAt, paneUrl, panesTake, restorePanes, setAutoShown, showActorsApp, startTabs, taskKey,
 } from "../layout/panes.js";
 import { takeChatView } from "../chat/files-view.js";
+import { stream } from "../../core/api/stream";
 
 // ------------------------------------------------------------------ ag's settings
 // ag's config.toml (settings.py): drawn by the new code now (src/features/settings/), at the top of the panel. What it
@@ -55,7 +56,7 @@ function connect() {
   const sel = state.selected, also = actorPanes().filter((p) => !isShell(p.c));   // a shell: nothing to stream but its terminal
   const q = [...(sel && !isShell(sel[1]) ? [`gatherer=${encodeURIComponent(sel[0])}`, `channel=${encodeURIComponent(sel[1])}`] : []),
     ...(also.length ? [`also=${encodeURIComponent(JSON.stringify(also.map((p) => [p.g, p.c])))}`] : [])];
-  const es = window.agNext.stream("/api/stream" + (q.length ? "?" + q.join("&") : ""));
+  const es = stream("/api/stream" + (q.length ? "?" + q.join("&") : ""));
   state.stream = es;
   panes.actors.clear();
   const mine = () => state.stream === es;

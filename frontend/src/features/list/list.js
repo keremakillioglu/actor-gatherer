@@ -26,8 +26,10 @@ import {
 } from "../layout/panes.js";
 import { refreshNewTab } from "../layout/new-tab.js";
 import { TASK_KINDS } from "../chat/chat.js";
-import { firstLine, plural } from "../transcript/transcript.js";
+import { firstLine, plural } from "../../core/format";
 import { shownGone } from "../terminal/shell.js";
+import * as appHost from "../apps/host";
+import * as prefs from "../../core/prefs";
 
 async function closeSession(a) {
   try { await post("/api/stop", { session_id: a.session.session_id }); }
@@ -44,7 +46,7 @@ async function discardSession(g, a) {
 // ------------------------------------------------------------------ the agent list
 const COLLAPSED_KEY = "ag-dashboard-collapsed-gatherers";
 const collapsed = (() => {                        // gatherers the reader folded, kept in this browser
-  try { const v = JSON.parse(localStorage.getItem(COLLAPSED_KEY)); if (Array.isArray(v)) return new Set(v); } catch (e) { /* none kept */ }
+  { const v = prefs.list(COLLAPSED_KEY); if (v) return new Set(v); }
   return new Set();
 })();
 // Closed actors (their process gone), and those saved for later, are each folded away under a line ("N closed",
@@ -52,32 +54,32 @@ const collapsed = (() => {                        // gatherers the reader folded
 // gatherer's shells ("N terminals", SHELLS) -- but none in view while folded, even one open in a pane.
 const FOLD_KEYS = { Closed: "ag-dashboard-closed-shown", Saved: "ag-dashboard-saved-shown", Terminals: "ag-dashboard-terminals-shown" };
 const foldOpen = Object.fromEntries(Object.entries(FOLD_KEYS).map(([group, key]) => {
-  try { const v = JSON.parse(localStorage.getItem(key)); if (Array.isArray(v)) return [group, new Set(v)]; } catch (e) { /* none kept */ }
+  { const v = prefs.list(key); if (v) return [group, new Set(v)]; }
   return [group, new Set()];
 }));
 function toggleFold(group, name) {
   const open = foldOpen[group];
   if (open.has(name)) open.delete(name); else open.add(name);
-  try { localStorage.setItem(FOLD_KEYS[group], JSON.stringify([...open])); } catch (e) { /* kept for this page only */ }
+  prefs.keep(FOLD_KEYS[group], [...open]);
   renderAgents();
 }
 // The coordinator agents the reader hid from the list, kept in this browser: a group's by the group's name, any other's by
 // its node (crewHideKey) -- its face on its group's or folder's row (crewButton) shows it again, and opens it.
 const CREW_HIDDEN_KEY = "ag-dashboard-crew-hidden";
 const crewHidden = (() => {
-  try { const v = JSON.parse(localStorage.getItem(CREW_HIDDEN_KEY)); if (Array.isArray(v)) return new Set(v); } catch (e) { /* none kept */ }
+  { const v = prefs.list(CREW_HIDDEN_KEY); if (v) return new Set(v); }
   return new Set();
 })();
 function setCrewHidden(name, hide) {
   if (hide) crewHidden.add(name); else crewHidden.delete(name);
-  try { localStorage.setItem(CREW_HIDDEN_KEY, JSON.stringify([...crewHidden])); } catch (e) { /* kept for this page only */ }
+  prefs.keep(CREW_HIDDEN_KEY, [...crewHidden]);
   renderAgents();
 }
 // The actor shown when none is chosen: the newest not closed, else the newest.
 const firstAgent = (g) => g.agents.find((a) => a.status !== "closed") || g.agents[0];
 function toggleGatherer(name) {
   if (collapsed.has(name)) collapsed.delete(name); else collapsed.add(name);
-  try { localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsed])); } catch (e) { /* kept for this page only */ }
+  prefs.keep(COLLAPSED_KEY, [...collapsed]);
   renderAgents();
 }
 // Hidden gatherers, kept by the server (hiding.py, `home.hiding`) so every dashboard on this home
@@ -238,7 +240,7 @@ const closedSays = (g, id, own) => {
 // in, opened
 const FOLDERS_OPEN_KEY = "ag-dashboard-folders-open";
 const foldersOpen = (() => {
-  try { const v = JSON.parse(localStorage.getItem(FOLDERS_OPEN_KEY)); if (Array.isArray(v)) return new Set(v); } catch (e) { /* none kept */ }
+  { const v = prefs.list(FOLDERS_OPEN_KEY); if (v) return new Set(v); }
   return new Set();
 })();
 const folderKey = (gname, id) => `${gname}\u0000${id}`;
@@ -248,7 +250,7 @@ function showFolder(gname, id, open) {
   if (gname === GF) return gfShow(id, open);
   const k = folderKey(gname, id);
   if (open) foldersOpen.add(k); else foldersOpen.delete(k);
-  try { localStorage.setItem(FOLDERS_OPEN_KEY, JSON.stringify([...foldersOpen])); } catch (e) { /* kept for this page only */ }
+  prefs.keep(FOLDERS_OPEN_KEY, [...foldersOpen]);
 }
 function toggleFolder(gname, id) {
   showFolder(gname, id, !isOpenFolder(gname, id));
@@ -421,13 +423,12 @@ async function closePicks(g, list) {
 }
 // Choices this browser kept before the server did: handed to the server once, then dropped here.
 async function moveHidingToServer() {
-  let v = null;
-  try { v = JSON.parse(localStorage.getItem(HIDDEN_KEY)); } catch (e) { /* none kept */ }
+  const v = prefs.json(HIDDEN_KEY);
   if (SNAPSHOT || !v) return;
   const had = state.home.hiding || {};
   for (const name of v.hidden || []) if (!had[name]) await keepChoice(name, "hidden");
   for (const name of v.shown || []) if (!had[name]) await keepChoice(name, "shown");
-  try { localStorage.removeItem(HIDDEN_KEY); } catch (e) { /* stays; the server's choices win */ }
+  prefs.drop(HIDDEN_KEY);
   renderAgents();
 }
 // A gatherer's or a folder's actors as its box lists them (FOLDERS): [group, list] for each that has any -- its actors
@@ -790,7 +791,7 @@ const appFolder = (gname, id) => { const f = treeOf(gname).filed[appItem(id)]; r
 // they changed
 const APPS_READ = 2000, appsKnown = new Map(), appsRead = new Map();
 function readApps(gname, now = false) {
-  if (PANE || SNAPSHOT || !window.agNext || !window.agNext.apps.found().length) return Promise.resolve();
+  if (PANE || SNAPSHOT || !appHost.found().length) return Promise.resolve();
   if (!now && Date.now() - (appsRead.get(gname) || 0) < APPS_READ) return Promise.resolve();
   appsRead.set(gname, Date.now());
   return get(`/api/apps?gatherer=${encodeURIComponent(gname)}`).then((got) => {
@@ -826,7 +827,7 @@ function appsFollowHome(home) {
 // an open instance as the list has it -- {app (its manifest), id, title, name (the user's), folder, inst} -- null: of an
 // app not found here
 function appOf(i, gname) {
-  const app = window.agNext && window.agNext.apps.named(i.app);
+  const app = appHost.named(i.app);
   return app ? { app, id: i.id, title: i.title || "", name: i.name || "", folder: i.folder || null, group: gname, inst: i } : null;
 }
 const gathererApps = (gname) => PANE || SNAPSHOT ? [] : ((appsKnown.get(gname) || {}).instances || []).map((i) => appOf(i, gname)).filter(Boolean);
@@ -992,7 +993,7 @@ async function selectApp(gname, o, ev = null) {
   let p = panes.apps.find((q) => q.instance.id === o.id);
   if (p) p = showAppPanel(o.app, p.instance);        // (one held out of sight: shown)
   else {
-    const inst = await window.agNext.apps.instanceOf(o.app.name, gname, o.id).catch(() => null);
+    const inst = await appHost.instanceOf(o.app.name, gname, o.id).catch(() => null);
     if (!inst) { paneNote(`${o.app.label}: closed`); readApps(gname, true); return; }
     p = showAppPanel(o.app, inst);
   }
@@ -1063,7 +1064,7 @@ function addButton(g, k, label = null) {
   const a = isAppItem(k) ? null : actorOf(g, k), o = a ? null : appInfo(g.name, k.slice(APP_ITEM.length));
   if ((!a && !o) || (a && isCoordinator(a)) || (o && groupApp(o.app))) return null;
   const hs = SNAPSHOT ? [] : startable();
-  const apps = SNAPSHOT || PANE || !window.agNext ? [] : window.agNext.apps.found().filter((app) => onTask(app) !== "no" && !app.failed);
+  const apps = SNAPSHOT || PANE ? [] : appHost.found().filter((app) => onTask(app) !== "no" && !app.failed);
   if (!hs.length && !apps.length) return null;
   // its menu's key: its own, apart from the list's "+" for the same item, which the menu would hang from otherwise
   const mk = `${label ? "card-" : ""}task-add:${g.name}/${k}`, id = itemTaskOf(g, k);
@@ -1124,12 +1125,12 @@ async function addToTask(gname, k, harness) {
 async function addAppToTask(gname, k, name) {
   const g = gathererNamed(gname);
   const a = g && !isAppItem(k) ? actorOf(g, k) : null, o = g && !a ? appInfo(gname, k.slice(APP_ITEM.length)) : null;
-  const app = (a || o) && window.agNext ? window.agNext.apps.named(name) : null;
+  const app = (a || o) ? appHost.named(name) : null;
   if (!app) return;
   await showItemsTask(g, k);
   const was = selectedTask();
   try {
-    const inst = await window.agNext.apps.open(name, gname, (a ? cwdOf(a) : o.folder) || null);
+    const inst = await appHost.open(name, gname, (a ? cwdOf(a) : o.folder) || null);
     if (!o || inst.id !== o.id) takeTasks(await post("/api/tasks", { gatherer: gname, do: "add", to: keptAs(g, k), items: [appItem(inst.id)] }));
     await readApps(gname, true);
     const had = panes.apps.some((p) => p.instance.id === inst.id);
@@ -1147,13 +1148,13 @@ async function addAppToTask(gname, k, name) {
 async function openAppAt(gname, k, name) {
   const g = gathererNamed(gname);
   const a = g && !isAppItem(k) ? actorOf(g, k) : null, o = g && !a ? appInfo(gname, k.slice(APP_ITEM.length)) : null;
-  const app = (a || o) && window.agNext ? window.agNext.apps.named(name) : null;
+  const app = (a || o) ? appHost.named(name) : null;
   if (!app) return;
   const folder = (a ? cwdOf(a) : o.folder) || startCwd(g);
   if (!folder) return paneNote(`${app.label}: no directory to open it at`);
   await showItemsTask(g, k);
   try {
-    const inst = await window.agNext.apps.open(name, gname, folder, null, true);
+    const inst = await appHost.open(name, gname, folder, null, true);
     await readApps(gname, true);
     selectAppPane(showAppPanel(app, inst));           // (through the layout model, as addAppToTask's)
   } catch (e) { paneNote(`${app.label}: ${e.message}`); }
@@ -1538,7 +1539,7 @@ function startFolderEdit(gname, id = null, parent = null) {
   folderInput = null;
   if (collapsed.has(gname)) {
     collapsed.delete(gname);
-    try { localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsed])); } catch (e) { /* kept for this page only */ }
+    prefs.keep(COLLAPSED_KEY, [...collapsed]);
   }
   showFolder(gname, state.folderEdit.parent, true);
   renderAgents();

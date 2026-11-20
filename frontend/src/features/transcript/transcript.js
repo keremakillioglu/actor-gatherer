@@ -1,24 +1,24 @@
 import { state } from "../../core/page/state.js";
-import { el, full } from "../../core/page/helpers.js";
+import { el } from "../../core/page/helpers.js";
 import { keepingPlace } from "../settings/panel.js";
 import { renderMain } from "../page/main-view.js";
+import { markdown } from "../../core/ui/md";
+import { firstLine, plural } from "../../core/format";
+import * as prefs from "../../core/prefs";
 
 // ------------------------------------------------------------------ the Transcript view
 // The conversation as a terminal running the harness shows it: what was asked, what the agent said
 // (markdown), each tool call with its result under it, its thinking folded away. The data has made
 // every harness's events the same parts (data.parts), each call with its shape (SHAPES says how each is shown).
 const NOTES_KEY = "ag-dashboard-transcript-notes";
-let showNotes = (() => { try { return localStorage.getItem(NOTES_KEY) === "1"; } catch (e) { return false; } })();
+let showNotes = prefs.flag(NOTES_KEY);
 const RESULT_LINES = 4;                            // a result's lines shown before "+N lines"
 // Where each harness keeps its memory of a directory (harness_kit's `memory_folder`): [the folder's pattern, harness].
 const memoryFolders = () => Object.entries((state.home && state.home.harness_info) || {})
   .filter(([, h]) => h.memory_folder).map(([n, h]) => [new RegExp(`${h.memory_folder}$`), n]);
-function markdown(...a) { return window.agNext.ui.markdown(...a); }
-const firstLine = (t, n = 160) => { const l = String(t ?? "").split("\n")[0]; return l.length > n ? l.slice(0, n) + "…" : l; };
 // a tool's output as lines, less the terminal's escape codes (colors, line clears) it may have printed
 // eslint-disable-next-line no-control-regex -- a terminal's escapes (ESC [ ...), taken out
 const lines = (t) => (t ? String(t).replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "").replace(/\n+$/, "").split("\n") : []);
-const plural = (n, w) => `${full(n)} ${w}${n === 1 ? "" : "s"}`;
 const str = (v) => typeof v === "string" ? v : v === undefined || v === null ? "" : JSON.stringify(v);
 const shortPath = (p) => { const s = str(p); const cwd = (state.txCwd || "").replace(/\/$/, ""); return cwd && s.startsWith(cwd + "/") ? s.slice(cwd.length + 1) : s; };
 // A result folded to its first lines; the rest one click away. `id` keeps it open across redraws.
@@ -208,12 +208,9 @@ function notesSwitch() {
   box.checked = showNotes;
   box.addEventListener("change", () => {
     showNotes = box.checked;
-    try { localStorage.setItem(NOTES_KEY, showNotes ? "1" : "0"); } catch (e) { /* this page only */ }
+    prefs.setFlag(NOTES_KEY, showNotes);
     keepingPlace(renderMain);
   });
   return el("label", { title: "The harness's system messages and ag's notices" }, box, "Show system and ag notes");
 }
-export {
-  SHAPES, blockCache, firstLine, foldedOutput, markdown, memoryFolders, notesSwitch, plural, showNotes, str, summary,
-  transcriptBlocks,
-};
+export { SHAPES, blockCache, foldedOutput, memoryFolders, notesSwitch, showNotes, str, summary, transcriptBlocks };

@@ -222,6 +222,11 @@ scope where everything they touched already was. So its files became ordinary mo
   (`.prettierignore`) so that a branch that changed `src/legacy/` still merges: git takes each file's move as a
   rename and puts the branch's changes into it. Formatting them is a change of its own once no such branch is open.
 - **Tests** that read the page read it through `tests/page_source.py`, which follows `page.js`'s imports.
+- **The new code imported, not bridged** (after A3b): the old modules import what they call of the new code -- the
+  renderers (`core/ui/`), the stream, the apps' host and links, Chat's turns, the settings' store, the work area --
+  as any module does, in place of `window.agNext` and the one-line functions calling it. `window.agNext` keeps only
+  the stream and the markdown renderer, which the browser tests reach for. The descriptions of A4 and A5 below say
+  how it was done at the time.
 
 Each of these modules still goes as its view is rewritten (A5, A6), and a new view's code is TypeScript.
 

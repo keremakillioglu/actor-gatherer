@@ -1,6 +1,9 @@
 import { GROUP_ORDER, NOT_COUNTED, PREAMBLE, SNAPSHOT, state } from "./state.js";
 import { tildePath } from "./code.js";
 import { isShell, key, parse as parseKey, taskId, taskNumber } from "../model/keys";
+import { escapeHtml } from "../ui/html";
+import { ago, axisTime, clock, compact, full, lasting, span, usd } from "../format";
+import * as prefs from "../prefs";
 
 // ------------------------------------------------------------------ helpers
 const el = (tag, attrs = {}, ...kids) => {
@@ -17,34 +20,9 @@ const svgEl = (tag, attrs = {}) => {
   for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
   return n;
 };
-const compact = (v) => v === null || v === undefined ? "–" : v >= 1e6 ? (v / 1e6).toFixed(v >= 1e7 ? 0 : 1).replace(/\.0$/, "") + "M"
-  : v >= 1e3 ? (v / 1e3).toFixed(v >= 1e5 ? 0 : 1).replace(/\.0$/, "") + "K" : String(Math.round(v));
-const full = (v) => v === null || v === undefined ? "–" : Math.round(v).toLocaleString();
-const axisTime = (t, days, seconds) => new Date(t * 1000).toLocaleString([], days
-  ? { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }
-  : seconds ? { hour: "2-digit", minute: "2-digit", second: "2-digit" } : { hour: "2-digit", minute: "2-digit" });
-const clock = (t, withDate) => t ? new Date(t * 1000).toLocaleString([], withDate
-  ? { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" } : { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "–";
-const ago = (t) => {
-  if (!t) return "never";
-  const s = Math.max(0, Date.now() / 1000 - t);
-  return s < 60 ? `${Math.round(s)}s ago` : s < 3600 ? `${Math.round(s / 60)}m ago` : s < 86400 ? `${Math.round(s / 3600)}h ago` : `${Math.round(s / 86400)}d ago`;
-};
-// " (… <what> Ns ago)", counting: the time `t` (the server's seconds) set every second (the ticker by `data-since`);
-// hidden from screen readers, so a status line holding it is not read out again each second.
-// How long since the time `t` (the server's seconds), as a clock counting up: "45s", "2m 05s", "1h 12m" (spell: `s`
-// seconds, so).
-const spell = (s) => {
-  s = Math.max(0, Math.floor(s)); const pad = (n) => String(n).padStart(2, "0");
-  return s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}m ${pad(s % 60)}s` : `${Math.floor(s / 3600)}h ${pad(Math.floor(s / 60) % 60)}m`;
-};
-const lasting = (t) => spell(Date.now() / 1000 - t);
+// " (… <what> Ns ago)", counting: the time `t` (the server's seconds) set every second (core/ui/clocks.ts, by
+// `data-ago`); hidden from screen readers, so a status line holding it is not read out again each second.
 const agoEl = (what, t) => el("span", { "aria-hidden": "true" }, ` (${what} `, el("span", { "data-ago": t || "", text: ago(t) }), ")");
-const span = (a, b) => {
-  if (!a || !b) return "–";
-  const s = Math.max(0, b - a);
-  return s < 60 ? `${s.toFixed(0)}s` : s < 3600 ? `${(s / 60).toFixed(1)}m` : `${(s / 3600).toFixed(1)}h`;
-};
 // The agent's own events by type, as the context card colors and filters them; fixed order, fixed colors.
 const TYPES = [["user_message", "User", "var(--s7)"], ["agent_message", "Assistant", "var(--s1)"],
   ["tool_call", "Tool call", "var(--t-call)"], ["tool_output", "Tool output", "var(--t-output)"],
@@ -66,13 +44,12 @@ const HISTORY = new Set(["Recent history", "Kept from before the cut"]);
 const SHOWN_KEY = "ag-dashboard-shown-types-4";   // -4: system/developer messages and the preamble hidden by default
 const shownTypes = (() => {                       // the reader's choice, kept in this browser; by default the
                                                   // conversation: user and assistant messages, and the Gatherer's
-  try { const v = JSON.parse(localStorage.getItem(SHOWN_KEY)); if (Array.isArray(v)) return new Set(v); } catch (e) { /* none kept */ }
+  { const v = prefs.list(SHOWN_KEY); if (v) return new Set(v); }
   return new Set(["user_message", "agent_message", "gatherer"]);
 })();
 const GROUP_COLORS = { [PREAMBLE]: "var(--s8)", [NOT_COUNTED]: "var(--axis)", "Gatherer guide": "var(--t-gatherer)" };
 // a group GROUP_ORDER does not name (or its first, index 0) takes --s6: there is no --s-1
 const color = (group) => GROUP_COLORS[group] || `var(--s${GROUP_ORDER.indexOf(group) > 0 ? GROUP_ORDER.indexOf(group) : 6})`;
-const usd = (v) => v === null || v === undefined ? "–" : v > 0 && v < 0.01 ? "<$0.01" : "$" + v.toFixed(2);
 // Each harness as harness_kit describes it (data.py's `harness_info`), by its name: the page names none itself. A
 // session that names none is the home's `harness_default`'s.
 const harnessInfo = (h) => ((state.home && state.home.harness_info) || {})[h] || null;
@@ -493,9 +470,7 @@ const signature = (value) => JSON.stringify(value);
 const MAC = /mac|iphone|ipad/i.test((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || "");
 const BESIDE_KEY = MAC ? "⌘" : "Ctrl";
 // Text escaped for HTML, and markdown as the page draws a message (a harness's reply block in it as a card, `unplanned`
-// its words less the block's tags): src/core/ui/html.ts and md.ts (ag_dashboard/DESIGN.md, A5), reached through
-// src/bridge.ts's window.agNext.ui.
-function escapeHtml(t) { return window.agNext.ui.escapeHtml(t); }
+// its words less the block's tags): src/core/ui/html.ts and md.ts (ag_dashboard/DESIGN.md, A5), imported from there.
 
 export {
   BESIDE_KEY, GATHERER, HISTORY, HUE_INK, HUE_MAIN, ICONS, INLINE, MAC, OTHER_TYPE, PREAMBLE_TYPE, SHOWN_KEY, TYPES,

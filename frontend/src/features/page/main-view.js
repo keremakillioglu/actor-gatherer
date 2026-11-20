@@ -12,10 +12,12 @@ import { shellCard } from "../terminal/shell.js";
 import { interrupt } from "../chat/files-view.js";
 import { chatMin, fitMini, shellMini, topMount } from "../layout/top.js";
 import { focusedPane } from "../layout/panes.js";
+import { useSettings } from "../settings/store";
+import * as prefs from "../../core/prefs";
 
 function toggleType(type) {
   if (shownTypes.has(type)) shownTypes.delete(type); else shownTypes.add(type);
-  try { localStorage.setItem(SHOWN_KEY, JSON.stringify([...shownTypes])); } catch (e) { /* kept for this page only */ }
+  prefs.keep(SHOWN_KEY, [...shownTypes]);
   keepingPlace(renderMain);
 }
 // ------------------------------------------------------------------ the selected agent
@@ -177,7 +179,7 @@ export function start() {
     }
     if ((n && n.closest && n.closest("input, textarea, select, [contenteditable], .xterm, .top-row"))
       || document.querySelector("[role=menu]:not([hidden]), [role=dialog]:not([hidden]), dialog[open]")
-      || !document.getElementById("about").hidden || window.agNext.settings.fileOpen()) return;
+      || !document.getElementById("about").hidden || useSettings.getState().file.open) return;
     if (!PANE && focusedPane() !== panes.here ? focusedPane().call("escape") : escapeShown()) ev.preventDefault();
   }, true);
   document.addEventListener("keydown", (ev) => {
