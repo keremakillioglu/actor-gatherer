@@ -108,7 +108,7 @@ main:has(> .chat.mini) { align-items: flex-end; }
 @keyframes mh-pulse { 50% { opacity: .35; } }
 /* the card: in the page around a pane's frame, over everything there (the hover cards' level), and over a native page
    (class floats: features/apps/native.ts) */
-.mh-card { position: fixed; z-index: 60; display: flex; flex-direction: column; background: var(--surface); color: var(--ink);
+.mh-card { position: fixed; z-index: var(--z-card); display: flex; flex-direction: column; background: var(--surface); color: var(--ink);
   border: 1px solid var(--ring); border-radius: 12px; overflow: hidden; font-size: var(--fs-ui); line-height: 1.45;
   box-shadow: 0 12px 32px rgba(0, 0, 0, .16), 0 2px 6px rgba(0, 0, 0, .06); transform-origin: var(--ox, 0) 100%; }
 .mh-card.grow { animation: mh-grow .17s cubic-bezier(.2, .8, .3, 1); }

@@ -20,7 +20,7 @@
 .actor-card .c-notice:not(.new) .status.notified i { box-shadow: none; }
 
 /* the pop-ups: at the page's bottom right, the newest last, over everything but a dialog */
-.pops { position: fixed; right: 16px; bottom: 16px; z-index: 80; display: grid; gap: 8px; width: 340px; max-width: calc(100vw - 32px); pointer-events: none; }
+.pops { position: fixed; right: 16px; bottom: 16px; z-index: var(--z-toast); display: grid; gap: 8px; width: 340px; max-width: calc(100vw - 32px); pointer-events: none; }
 .pop { pointer-events: auto; display: flex; align-items: flex-start; gap: 2px; padding: 4px; background: var(--surface); color: var(--ink);
   border: 1px solid var(--ring); border-radius: 10px; box-shadow: 0 10px 28px rgba(0,0,0,.24); animation: pop-in .22s ease-out; }
 @keyframes pop-in { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }

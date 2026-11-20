@@ -59,5 +59,4 @@
 .term .call-line > details[open] > summary { margin-bottom: 6px; }
 .term .call-line .calls { border-left: 1px solid var(--term-rule); padding-left: 10px; margin-bottom: 8px; }
 .term .more > details[open] > summary { margin-bottom: 4px; }
-.term .empty-term { color: var(--term-faint); }
 @media (max-width: 760px) { .term { padding: 10px 12px 14px; font-size: var(--fs-meta); } }
